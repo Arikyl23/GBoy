@@ -2,12 +2,12 @@
 
 This directory is responsible for housing all external library source. If we didn't write it ourselves, it should go here.
 
-## Current Vendored Libraries
+## List Of Vendored Libraries
 
 Here is a list of the current libraries we are vendoring. You can find more details for each below in its respective section:
 
-- log.c
-- Simple DirectMedia Layer (SDL)
+- [log.c](#logc)
+- [Simple DirectMedia Layer (SDL)](#simple-directmedia-layer-sdl)
 
 ### Log.c
 
@@ -19,7 +19,7 @@ Here is a list of the current libraries we are vendoring. You can find more deta
 **Git Repo:** https://github.com/rxi/log.c <br>
 
 
-This is a simple and lightweight logging library written in C99.
+Log.c is a simple and lightweight logging library written in C99.
 
 Note that some changes to the source have been made. In particular:
 
