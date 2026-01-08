@@ -2,72 +2,57 @@
  * @file registers.c
  * @brief Compilation Unit for the CPU registers.
  */
-#include <cpu/registers/registers.h>
+#include "cpu/registers/registers.h"
 
-static const word ZFLAG_BITMASK = 0x0080;
-static const word NFLAG_BITMASK = 0x0040;
-static const word HFLAG_BITMASK = 0x0020;
-static const word CFLAG_BITMASK = 0x0010;
+#include <stddef.h>
+#include <string.h>
 
-static word AF;
-static word BC;
-static word DE;
-static word HL;
-static word SP;
-static word PC;
+static const byte ZFLAG_BITMASK = 0b10000000;
+static const byte NFLAG_BITMASK = 0b01000000;
+static const byte HFLAG_BITMASK = 0b00100000;
+static const byte CFLAG_BITMASK = 0b00010000;
 
-// Helpers
-// =======
-
-static inline void set_high_byte(word* reg, const byte high_byte) {
-    *reg = (((word)high_byte) << 8) | (*reg & 0x00FF);
-}
-static inline void set_low_byte(word* reg, const byte low_byte) {
-    *reg = ((word)low_byte) | (*reg & 0xFF00);
-}
-
-// =======
-// Helpers
+static struct registers m_regs = {0};
 
 // Main 16-bit Registers
 // =====================
 
 void registers_set_AF(const word value) {
-    AF = value & 0xFFF0;
+    m_regs.AF = value & 0xFFF0;
 }
 void registers_set_BC(const word value) {
-    BC = value;
+    m_regs.BC = value;
 }
 void registers_set_DE(const word value) {
-    DE = value;
+    m_regs.DE = value;
 }
 void registers_set_HL(const word value) {
-    HL = value;
+    m_regs.HL = value;
 }
 void registers_set_SP(const word value) {
-    SP = value;
+    m_regs.SP = value;
 }
 void registers_set_PC(const word value) {
-    PC = value;
+    m_regs.PC = value;
 }
 
 word registers_get_AF(void) {
-    return AF;
+    return m_regs.AF;
 }
 word registers_get_BC(void) {
-    return BC;
+    return m_regs.BC;
 }
 word registers_get_DE(void) {
-    return DE;
+    return m_regs.DE;
 }
 word registers_get_HL(void) {
-    return HL;
+    return m_regs.HL;
 }
 word registers_get_SP(void) {
-    return SP;
+    return m_regs.SP;
 }
 word registers_get_PC(void) {
-    return PC;
+    return m_regs.PC;
 }
 
 // =====================
@@ -78,55 +63,53 @@ word registers_get_PC(void) {
 // =======================
 
 void registers_set_A(const byte value) {
-    set_high_byte(&AF, value);
-    AF &= 0xFFF0;
+    m_regs.A = value;
 }
 void registers_set_F(const byte value) {
-    set_low_byte(&AF, value);
-    AF &= 0xFFF0;
+    m_regs.F = value & 0xF0;
 }
 void registers_set_B(const byte value) {
-    set_high_byte(&BC, value);
+    m_regs.B = value;
 }
 void registers_set_C(const byte value) {
-    set_low_byte(&BC, value);
+    m_regs.C = value;
 }
 void registers_set_D(const byte value) {
-    set_high_byte(&DE, value);
+    m_regs.D = value;
 }
 void registers_set_E(const byte value) {
-    set_low_byte(&DE, value);
+    m_regs.E = value;
 }
 void registers_set_H(const byte value) {
-    set_high_byte(&HL, value);
+    m_regs.H = value;
 }
 void registers_set_L(const byte value) {
-    set_low_byte(&HL, value);
+    m_regs.L = value;
 }
 
 byte registers_get_A(void) {
-    return (byte)(AF >> 8);
+    return m_regs.A;
 }
 byte registers_get_F(void) {
-    return (byte)(AF);
+    return m_regs.F;
 }
 byte registers_get_B(void) {
-    return (byte)(BC >> 8);
+    return m_regs.B;
 }
 byte registers_get_C(void) {
-    return (byte)(BC);
+    return m_regs.C;
 }
 byte registers_get_D(void) {
-    return (byte)(DE >> 8);
+    return m_regs.D;
 }
 byte registers_get_E(void) {
-    return (byte)(DE);
+    return m_regs.E;
 }
 byte registers_get_H(void) {
-    return (byte)(HL >> 8);
+    return m_regs.H;
 }
 byte registers_get_L(void) {
-    return (byte)(HL);
+    return m_regs.L;
 }
 
 // =======================
@@ -136,57 +119,72 @@ byte registers_get_L(void) {
 // Flags
 // =====
 
-void registers_assign_flag_z(bool state) {
-    (state == true) ? registers_set_flag_z() : registers_clear_flag_z();
+static inline void generic_set_bit(const byte bitmask) {
+    m_regs.F |= bitmask;
 }
-void registers_assign_flag_n(bool state) {
-    (state == true) ? registers_set_flag_n() : registers_clear_flag_n();
-}
-void registers_assign_flag_h(bool state) {
-    (state == true) ? registers_set_flag_h() : registers_clear_flag_h();
-}
-void registers_assign_flag_c(bool state) {
-    (state == true) ? registers_set_flag_c() : registers_clear_flag_c();
-}
-
 void registers_set_flag_z(void) {
-    registers_set_AF(registers_get_AF() | ZFLAG_BITMASK);
+    generic_set_bit(ZFLAG_BITMASK);
 }
 void registers_set_flag_n(void) {
-    registers_set_AF(registers_get_AF() | NFLAG_BITMASK);
+    generic_set_bit(NFLAG_BITMASK);
 }
 void registers_set_flag_h(void) {
-    registers_set_AF(registers_get_AF() | HFLAG_BITMASK);
+    generic_set_bit(HFLAG_BITMASK);
 }
 void registers_set_flag_c(void) {
-    registers_set_AF(registers_get_AF() | CFLAG_BITMASK);
+    generic_set_bit(CFLAG_BITMASK);
 }
 
+static inline void generic_clear_bit(const byte bitmask) {
+    m_regs.F &= ~(bitmask | 0b00001111);
+}
 void registers_clear_flag_z(void) {
-    registers_set_AF(registers_get_AF() & ~ZFLAG_BITMASK);
+    generic_clear_bit(ZFLAG_BITMASK);
 }
 void registers_clear_flag_n(void) {
-    registers_set_AF(registers_get_AF() & ~NFLAG_BITMASK);
+    generic_clear_bit(NFLAG_BITMASK);
 }
 void registers_clear_flag_h(void) {
-    registers_set_AF(registers_get_AF() & ~HFLAG_BITMASK);
+    generic_clear_bit(HFLAG_BITMASK);
 }
 void registers_clear_flag_c(void) {
-    registers_set_AF(registers_get_AF() & ~CFLAG_BITMASK);
+    generic_clear_bit(CFLAG_BITMASK);
 }
 
+static inline bool generic_get_bit(const byte bitmask) {
+    return ((m_regs.F & bitmask) != 0);
+}
 bool registers_get_flag_z(void) {
-    return (registers_get_AF() & ZFLAG_BITMASK) == ZFLAG_BITMASK;
+    return generic_get_bit(ZFLAG_BITMASK);
 }
 bool registers_get_flag_n(void) {
-    return (registers_get_AF() & NFLAG_BITMASK) == NFLAG_BITMASK;
+    return generic_get_bit(NFLAG_BITMASK);
 }
 bool registers_get_flag_h(void) {
-    return (registers_get_AF() & HFLAG_BITMASK) == HFLAG_BITMASK;
+    return generic_get_bit(HFLAG_BITMASK);
 }
 bool registers_get_flag_c(void) {
-    return (registers_get_AF() & CFLAG_BITMASK) == CFLAG_BITMASK;
+    return generic_get_bit(CFLAG_BITMASK);
 }
 
 // =====
 // Flags
+
+
+// Test Functions
+// ==============
+
+void registers_reset(void) {
+    memset(&m_regs, 0x00, sizeof(struct registers));
+}
+
+int registers_snapshot(struct registers *regs) {
+    if (regs == NULL) { return -1; }
+    
+    // Create exact bit perfect copy
+    memcpy(regs, &m_regs, sizeof(struct registers));
+    return 0;
+}
+
+// ==============
+// Test Functions

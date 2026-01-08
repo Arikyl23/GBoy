@@ -13,20 +13,20 @@ add_definitions(-DPROJECT_SOURCE_DIR_SIZE=${SOURCE_PATH_SIZE})
 add_subdirectory(vendored/log.c-master)
 add_subdirectory(vendored/SDL-release-3.4.0 EXCLUDE_FROM_ALL)
 
-# Setup GBoy Executable
-add_executable(GBoy src/main.c)
-
-target_sources(GBoy
+# Construct GBoy library (Contains the logic)
+add_library(lib_GBoy STATIC)
+add_subdirectory(src)
+target_include_directories(lib_GBoy PUBLIC src)
+target_link_libraries(lib_GBoy
     PRIVATE
-        src/main.c
-        src/cpu/registers/registers.c
-)
-
-
-target_include_directories(GBoy PRIVATE src)
-
-target_link_libraries(GBoy 
-    PRIVATE 
-        log_lib
+        lib_logging
         SDL3::SDL3
 )
+
+# Setup GBoy Executable (Simple Wrapper for lib_GBoy)
+add_executable(GBoy)
+target_sources(GBoy PRIVATE src/main.c)
+target_link_libraries(GBoy PRIVATE lib_GBoy)
+
+enable_testing()
+add_subdirectory(tests)

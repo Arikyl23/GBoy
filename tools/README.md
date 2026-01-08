@@ -26,4 +26,5 @@ Usage: buildtool.sh {generate|build|clean} [options]
     -clean: Deletes the /build/<configuration> folder before generating a new one
     --configuration [RELEASE|DEBUG]: Specifies the configuration to generate for. Defaults to DEBUG
   build [RELEASE|DEBUG]: Compile the project from the build files
+  test [RELEASE|DEBUG]: Run the test suite on the compiled configuration
 ```

@@ -90,6 +90,25 @@ case $COMMAND in
         echo -e "${GREEN}Success${NC}"
         ;;
 
+    test)
+        TARGET_CONFIG="debug"
+        if [ "${1^^}" == "RELEASE" ]; then
+            TARGET_CONFIG="release"
+        fi
+
+        BUILD_DIR="$BASE_BUILD_DIR/$TARGET_CONFIG"
+
+        if [ -d "$BUILD_DIR" ]; then
+            echo "Running Tests..."
+            ctest --test-dir $BUILD_DIR -V
+        else
+            echo -e "${RED}Error: Build directory '$BUILD_DIR' not found.${NC}"
+            echo -e "${YELLOW}Make sure to run generate first before this: $0 generate --configuration ${TARGET_CONFIG^^}${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}Tests Finished${NC}"
+        ;;
+
     *)
         echo "Usage: $0 {generate|build|clean} [options]"
         echo "  clean: Deletes the entire /build folder"
@@ -98,6 +117,7 @@ case $COMMAND in
         echo "    -clean: Deletes the /build/<configuration> folder before generating a new one"
         echo "    --configuration [RELEASE|DEBUG]: Specifies the configuration to generate for. Defaults to DEBUG"
         echo "  build [RELEASE|DEBUG]: Compile the project from the build files"
+        echo "  test [RELEASE|DEBUG]: Run the test suite on the compiled configuration"
         exit 1
         ;;
 esac

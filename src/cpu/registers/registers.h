@@ -8,6 +8,61 @@
 
 #include "DEFINES.h"
 
+/**
+ * @brief Structure that housing the registers.
+ */
+struct registers {
+    /** @brief Program Counter [16-bit]. Points to the current instruction. */
+    word PC;
+    /** @brief Stack Pointer [16-bit]. Points to the next empty stack slot. */
+    word SP;
+    
+    union {
+        /** @brief General Purpose 16-bit Register. Also used for 16-bit addressing mode. */
+        word HL;
+        struct {
+             /** @brief General Purpose 8-bit Virtual Register */
+            byte L;
+            /** @brief General Purpose 8-bit Virtual Register. */
+            byte H;
+        };
+    };
+    
+    union {
+        /** @brief General Purpose 16-bit Reigster. */
+        word DE;
+        struct {
+            /** @brief General Purpose 8-bit Virtual Register. */
+            byte E;
+            /** @brief General Purpose 8-bit Virtual Register. */
+            byte D;
+        };
+    };
+    
+    union {
+        word BC;
+        struct {
+            /** @brief General Purpose 8-bit Virtual Register. */
+            byte C;
+            /** @brief General Purpose 8-bit Virtual Register. */
+            byte B;
+        };
+    };
+    
+    union {
+        word AF;
+        struct {
+            /**
+             * @brief Flags [8-bit]. Stores the current CPU flags.
+             * @note bits (0-3) are shorted to ground and will always be 0.
+             */
+            byte F;
+            /** @brief Accumulator [8-bit]. Stores the last APU result. */
+            byte A;
+        };
+    };
+};
+
 // Main 16-bit Registers
 // =====================
 /**
@@ -229,31 +284,6 @@ byte registers_get_L(void);
 // =====
 
 /**
- * @brief Assigns the Zero flag to the specified state.
- * @param state State to set the flag to.
- * @note Generally set when the ALU returns a 0 result.
- */
-void registers_assign_flag_z(bool state);
-/**
- * @brief Assigns the Subtraction flag to the specified state.
- * @param state State to set the flag to.
- * @note Generally set when a BCD instruction performs a subtraction.
- */
-void registers_assign_flag_n(bool state);
-/**
- * @brief Assigns the Half carry flag to the specified state.
- * @param state State to set the flag to.
- * @note Generally set when a BCD instruction detects an overflow.
- */
-void registers_assign_flag_h(bool state);
-/**
- * @brief Assigns the Carry flag to the specified state.
- * @param state State to set the flag to.
- * @note Generally set when the ALU overflows.
- */
-void registers_assign_flag_c(bool state);
-
-/**
  * @brief Sets the Zero flag to 1.
  * @note Generally set when the ALU returns a 0 result.
  */
@@ -310,3 +340,23 @@ bool registers_get_flag_c(void);
 
 // =====
 // Flags
+
+
+// Test Functions
+// ==============
+
+/**
+ * @brief Resets all registers back to 0x00.
+ * @note This performs a memset on the entire memory block.
+ */
+void registers_reset(void);
+
+/**
+ * @brief Creates a snapshot of the current internal registers state.
+ * @param regs Pointer to where to store the snapshot. Must not be NULL.
+ * @note This performs a memcpy on the entire memory block.
+ */
+int registers_snapshot(struct registers *regs);
+
+// ==============
+// Test Functions
