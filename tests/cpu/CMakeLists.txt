@@ -1,8 +1,17 @@
-add_executable(test_registers test_registers.c)
-target_include_directories(test_registers PRIVATE ${CMAKE_SOURCE_DIR}/tests)
-target_link_libraries(test_registers PRIVATE lib_GBoy lib_logging)
-
+# Add Register Unit Tests
+add_executable(unit_test_cpu_registers registers/unit_test_registers.c)
+target_include_directories(unit_test_cpu_registers PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+target_link_libraries(unit_test_cpu_registers PRIVATE lib_GBoy lib_logging)
 add_test(
-    NAME "Test Module GBoy/CPU/Registers"
-    COMMAND test_registers
+    NAME "[UNIT] CPU/Registers"
+    COMMAND unit_test_cpu_registers
+)
+
+# Add ALU Unit Tests
+add_executable(unit_test_cpu_alu alu/unit_test_alu.c)
+target_include_directories(unit_test_cpu_alu PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+target_link_libraries(unit_test_cpu_alu PRIVATE lib_GBoy lib_logging)
+add_test(
+    NAME "[UNIT] CPU/ALU"
+    COMMAND unit_test_cpu_alu
 )

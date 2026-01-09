@@ -100,7 +100,7 @@ case $COMMAND in
 
         if [ -d "$BUILD_DIR" ]; then
             echo "Running Tests..."
-            ctest --test-dir $BUILD_DIR -V
+            ctest --test-dir $BUILD_DIR
         else
             echo -e "${RED}Error: Build directory '$BUILD_DIR' not found.${NC}"
             echo -e "${YELLOW}Make sure to run generate first before this: $0 generate --configuration ${TARGET_CONFIG^^}${NC}"
