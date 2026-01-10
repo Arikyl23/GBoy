@@ -8,48 +8,41 @@
 
 #include "DEFINES.h"
 
-/**
- * @brief Structure that housing the registers.
- */
-struct registers {
-    /** @brief Program Counter [16-bit]. Points to the current instruction. */
-    word PC;
-    /** @brief Stack Pointer [16-bit]. Points to the next empty stack slot. */
-    word SP;
-    
+struct registers { /** @brief Structure that housing the registers. */
+    word PC;       /** @brief Program Counter [16-bit]. Points to the current instruction. */
+    word SP;       /** @brief Stack Pointer [16-bit]. Points to the next empty stack slot. */
+
     union {
         /** @brief General Purpose 16-bit Register. Also used for 16-bit addressing mode. */
         word HL;
         struct {
-             /** @brief General Purpose 8-bit Virtual Register */
-            byte L;
-            /** @brief General Purpose 8-bit Virtual Register. */
-            byte H;
+            byte L; /** @brief General Purpose 8-bit Virtual Register */
+            byte H; /** @brief General Purpose 8-bit Virtual Register. */
         };
     };
-    
+
     union {
-        /** @brief General Purpose 16-bit Reigster. */
-        word DE;
+        word DE; /** @brief General Purpose 16-bit Reigster. */
         struct {
-            /** @brief General Purpose 8-bit Virtual Register. */
-            byte E;
-            /** @brief General Purpose 8-bit Virtual Register. */
-            byte D;
+            byte E; /** @brief General Purpose 8-bit Virtual Register. */
+            byte D; /** @brief General Purpose 8-bit Virtual Register. */
         };
     };
-    
+
     union {
-        word BC;
+        word BC; /** @brief General Purpose 16-bit Reigster. */
         struct {
-            /** @brief General Purpose 8-bit Virtual Register. */
-            byte C;
-            /** @brief General Purpose 8-bit Virtual Register. */
-            byte B;
+            byte C; /** @brief General Purpose 8-bit Virtual Register. */
+            byte B; /** @brief General Purpose 8-bit Virtual Register. */
         };
     };
-    
+
     union {
+        /**
+         * @brief Special 16-bit Register.
+         * @brief - High byte represents the ALU Accumulator.
+         * @brief - Low byte represents the CPU flags.
+         */
         word AF;
         struct {
             /**
@@ -71,9 +64,8 @@ struct registers {
  * @warning Bits 0-3 are shorted to GND. Any value being assigned to AF will be bit-masked by
  * 0xFFF0.
  * @note AF tracks the current CPU state. In particular:
- * 
- * - A | Accumulator: Last result from the ALU. See set_A() or get_A() for more details
- * - F | Flags: Current CPU flags. See set_F() or get_F() for more details
+ * @note - A | Accumulator: Last result from the ALU. See set_A() or get_A() for more details
+ * @note - F | Flags: Current CPU flags. See set_F() or get_F() for more details
  */
 void registers_set_AF(const word value);
 /**
@@ -112,7 +104,7 @@ void registers_set_PC(const word value);
  * @brief Gets register AF.
  * @returns The value of the register.
  * @note AF tracks the current CPU state. In particular:
- * 
+ *
  * - A | Accumulator: Last result from the ALU.
  * - F | Flags: Current CPU flags. See set_F() or get_F() for more details
  */
@@ -152,7 +144,6 @@ word registers_get_PC(void);
 // =====================
 // Main 16-bit Registers
 
-
 // Virtual 8-bit Registers
 // =======================
 
@@ -168,16 +159,11 @@ void registers_set_A(const byte value);
  * @warning Bits 0-3 are shorted to GND. Any value being assigned to AF will be bit-masked by
  * 0xFFF0.
  * @note CPU Flags. Stores the current CPU flags. In particular:
- * 
- * - 0-3 | NA | Not Used. Cannot be set. Always 0.
- * 
- * - 4 | c | Carry
- * 
- * - 5 | h | Half Carry (BCD)
- * 
- * - 6 | n | Subtraction (BCD)
- * 
- * - 7 | z | Zero
+ * @note - 0-3 | - | Not Used. Cannot be set. Always 0.
+ * @note -  4  | c | Carry
+ * @note -  5  | h | Half Carry (BCD)
+ * @note -  6  | n | Subtraction (BCD)
+ * @note -  7  | z | Zero
  */
 void registers_set_F(const byte value);
 /**
@@ -227,16 +213,11 @@ byte registers_get_A(void);
  * @brief Gets register F.
  * @returns The value of the register.
  * @note CPU Flags. Stores the current CPU flags. In particular:
- * 
- * - 0-3 | NA | Not Used. Cannot be set. Always 0.
- * 
- * - 4 | c | Carry
- * 
- * - 5 | h | Half Carry (BCD)
- * 
- * - 6 | n | Subtraction (BCD)
- * 
- * - 7 | z | Zero
+ * @note - 0-3 | - | Not Used. Cannot be set. Always 0.
+ * @note -  4  | c | Carry
+ * @note -  5  | h | Half Carry (BCD)
+ * @note -  6  | n | Subtraction (BCD)
+ * @note -  7  | z | Zero
  */
 byte registers_get_F(void);
 /**
@@ -279,7 +260,6 @@ byte registers_get_L(void);
 // =======================
 // Virtual 8-bit Registers
 
-
 // Flags
 // =====
 
@@ -313,25 +293,25 @@ void registers_clear_flag_h(void);
 /** @brief Clears the Carry flag to 0. */
 void registers_clear_flag_c(void);
 
-/** 
+/**
  * @brief Gets the Zero flag.
  * @returns The value of the flag.
  * @note Generally set when the ALU returns a 0 result.
  */
 bool registers_get_flag_z(void);
-/** 
+/**
  * @brief Gets the Subtraction flag.
  * @returns The value of the flag.
  * @note Generally set when a BCD instruction performs a subtraction.
  */
 bool registers_get_flag_n(void);
-/** 
+/**
  * @brief Gets the Half carry flag.
  * @returns The value of the flag.
  * @note Generally set when a BCD instruction detects an overflow.
  */
 bool registers_get_flag_h(void);
-/** 
+/**
  * @brief Gets the Carry flag.
  * @returns The value of the flag.
  * @note Generally set when the ALU overflows.
@@ -340,7 +320,6 @@ bool registers_get_flag_c(void);
 
 // =====
 // Flags
-
 
 // Test Functions
 // ==============
@@ -356,7 +335,7 @@ void registers_reset(void);
  * @param regs Pointer to where to store the snapshot. Must not be NULL.
  * @note This performs a memcpy on the entire memory block.
  */
-int registers_snapshot(struct registers *regs);
+int registers_snapshot(struct registers* regs);
 
 // ==============
 // Test Functions

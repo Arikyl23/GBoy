@@ -23,7 +23,6 @@ struct alu_result {
     } flags;
 };
 
-
 // 8-bit Operations
 // ================
 // Arithmetic Operations
@@ -202,7 +201,7 @@ struct alu_result alu_sla_8b(const byte value);
 struct alu_result alu_sra_8b(const byte value);
 
 /**
- * @brief Performs an 8-bit SWAP operation. This swaps the low nibble with the high nibble. 
+ * @brief Performs an 8-bit SWAP operation. This swaps the low nibble with the high nibble.
  *
  * b7-4 <-> b3-0
  * @param value Value to operate on.
@@ -253,7 +252,6 @@ struct alu_result alu_set_8b(const size_t bit, const byte value);
 // ================
 // 8-bit Operations
 
-
 // 16-bit Operations
 // =================
 
@@ -298,7 +296,8 @@ struct alu_result alu_add_16b(const word lhs, const word rhs);
 struct alu_result alu_add_16b_e8(const word lhs, const byte rhs);
 
 /**
- * @brief Performs Decimal Adjustment on a Binary-Coded Decimal (BCD) value. Corrects the BCD value following a standard arithmetic operation.
+ * @brief Performs Decimal Adjustment on a Binary-Coded Decimal (BCD) value. Corrects the BCD value
+ * following a standard arithmetic operation.
  * @param bcd_value Binary-Coded Decimal (BCD) value to correct.
  * @param n_flag Current state of the subtraction flag.
  * @param h_flag Current state of the half carry flag.
@@ -306,7 +305,12 @@ struct alu_result alu_add_16b_e8(const word lhs, const byte rhs);
  * @returns An alu_result with result.byte and flags set.
  * @note The following is the generic flag result: Z - 0 C
  */
-struct alu_result alu_da(const byte bcd_value, const bool n_flag, const bool h_flag, const bool c_flag);
+struct alu_result alu_da(
+    const byte bcd_value,
+    const bool n_flag,
+    const bool h_flag,
+    const bool c_flag
+);
 
 // ========================
 // Miscellaneous Operations
