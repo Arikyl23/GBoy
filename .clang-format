@@ -97,10 +97,12 @@ IfMacros:
   - KJ_IF_MAYBE
 IncludeBlocks:   Regroup
 IncludeCategories:
-  - Regex:      '^<.*>$'
+  - Regex:      '^<.*[.]h>$'
     Priority:   1
-  - Regex:      '^".*"$'
+  - Regex:      '^".*[.]h"$'
     Priority:   2
+  - Regex:      '^".*[.]c"$'
+    Priority:   3
 IncludeIsMainRegex: '$'
 IncludeIsMainSourceRegex: ''
 IndentCaseBlocks: false
