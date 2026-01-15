@@ -54,8 +54,14 @@ void* dld_instanciate(const size_t n_ram_banks) {
 
 void dld_destroy(void** p_ctx) {
     if (p_ctx == NULL) {
-        log_warn("Attempted to destroy a context that doesn't exist.\n\r"
+        log_warn("Attempted to destroy nothing.\n\r"
                  "\tp_ctx was NULL");
+        return;
+    }
+
+    if (*p_ctx == NULL) {
+        log_warn("Attempted to destroy a context that doesn't exist.\n\r"
+                 "\t*p_ctx was NULL");
         return;
     }
 
