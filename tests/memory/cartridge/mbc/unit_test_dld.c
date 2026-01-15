@@ -99,7 +99,10 @@ static bool test_interface_get(void) {
     setup_clear_fixtures();
 
     fixture_iface = dld_iface();
-    ASSERT_NOT_NULL(fixture_iface, "Failed to get iface");
+    ASSERT_NOT_NULL(fixture_iface, "Failed to get interface");
+    ASSERT_NOT_NULL(fixture_iface->read, "Interface does not define read()");
+    ASSERT_NOT_NULL(fixture_iface->write, "Interface does not define write()");
+    ASSERT_NOT_NULL(fixture_iface->destroy, "Interface does not define destroy()");
 
     return true;
 }
