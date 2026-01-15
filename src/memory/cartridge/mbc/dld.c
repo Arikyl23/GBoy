@@ -1,5 +1,7 @@
 /**
- *
+ * @file dld.c
+ * @brief Contains the implementation of the Discrete Logic Decoder (DLD). This is a type of Memory
+ * Bank Controller (MBC).
  */
 #include "memory/cartridge/mbc/dld.h"
 
