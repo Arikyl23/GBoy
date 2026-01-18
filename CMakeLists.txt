@@ -14,19 +14,22 @@ add_subdirectory(vendored/log.c-master)
 add_subdirectory(vendored/SDL-release-3.4.0 EXCLUDE_FROM_ALL)
 
 # Construct GBoy library (Contains the logic)
-add_library(lib_GBoy STATIC)
+add_library(GBoy_Internal STATIC)
 add_subdirectory(src)
-target_include_directories(lib_GBoy PUBLIC src)
-target_link_libraries(lib_GBoy
+target_include_directories(GBoy_Internal PUBLIC src)
+target_link_libraries(GBoy_Internal
     PRIVATE
         lib_logging
         SDL3::SDL3
 )
 
 # Setup GBoy Executable (Simple Wrapper for lib_GBoy)
-add_executable(GBoy)
-target_sources(GBoy PRIVATE src/main.c)
-target_link_libraries(GBoy PRIVATE lib_GBoy)
+add_executable(GBoy src/main.c)
+target_link_libraries(GBoy
+    PRIVATE
+        GBoy_Internal
+        lib_logging
+)
 
 enable_testing()
 add_subdirectory(tests)

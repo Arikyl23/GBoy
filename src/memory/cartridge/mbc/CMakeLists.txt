@@ -1,4 +1,4 @@
-target_sources(lib_GBoy
+target_sources(GBoy_Internal
     PRIVATE
         mbc.c
         dld.c
