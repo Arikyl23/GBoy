@@ -12,11 +12,9 @@
 #include "memory/cartridge/mbc/dld.h"
 #include "memory/cartridge/mbc/mbc1.h"
 #include "memory/cartridge/mbc/mbc_iface.h"
+#include "memory/cartridge/mbc/structs/mbc.h"
 
-struct mbc {                       /** @brief Memory Bank Controller.*/
-    const struct mbc_iface* iface; /** @brief Static Interace defining MBC functionality. */
-    void*                   ctx;   /** @brief Opaque pointer that holds the MBC context. */
-};
+LOG_MODULE_SETUP("MBC", CONFIG_MBC_MODULE_LOG_LEVEL);
 
 /**
  * @brief Resets the internal MBC data to NULL
@@ -79,22 +77,47 @@ struct mbc* mbc_create(
     reset_mbc(mbc);
     switch (cart_type) {
     case CART_ROM_ONLY:
+        if (n_ram_banks != 0) {
+            log_error(
+                "Attempted to create MBC for ROM ONLY cart but specified more than 0 RAM banks"
+            );
+            break;
+        }
+
         mbc->iface = dld_iface();
-        mbc->ctx   = dld_instanciate(0);
-        break;
+        mbc->ctx   = dld_instantiate(n_rom_banks, 0);
     case CART_ROM_RAM:
     case CART_ROM_RAM_BATTERY:
+        if (n_ram_banks == 0) {
+            log_error("Attempted to create MBC for ROM_RAM / ROM_RAM_BATTERY cart but specified no "
+                      "RAM banks");
+            break;
+        }
+
         mbc->iface = dld_iface();
-        mbc->ctx   = dld_instanciate(n_ram_banks);
+        mbc->ctx   = dld_instantiate(n_rom_banks, n_ram_banks);
         break;
     case CART_MBC1:
+        if (n_ram_banks != 0) {
+            log_error(
+                "Attempted to create MBC for MBC1 ROM ONLY cart but specified more than 0 RAM banks"
+            );
+            break;
+        }
+
         mbc->iface = mbc1_iface();
-        mbc->ctx   = mbc1_instanciate(n_rom_banks, 0);
+        mbc->ctx   = mbc1_instantiate(n_rom_banks, n_ram_banks);
         break;
     case CART_MBC1_RAM:
     case CART_MBC1_RAM_BATTERY:
+        if (n_ram_banks == 0) {
+            log_error("Attempted to create MBC for MBC1 ROM_RAM / ROM_RAM_BATTERY cart but "
+                      "specified no RAM banks");
+            break;
+        }
+
         mbc->iface = mbc1_iface();
-        mbc->ctx   = mbc1_instanciate(n_rom_banks, n_ram_banks);
+        mbc->ctx   = mbc1_instantiate(n_rom_banks, n_ram_banks);
         break;
     default:
     case CART_MBC2:

@@ -57,7 +57,7 @@ enum rom_size {
  * @param type Value to convert.
  * @returns Static cstring containing the readable name.
  */
-inline const char* rom_size_to_string(const enum rom_size size) {
+static inline const char* rom_size_to_string(const enum rom_size size) {
     switch (size) {
     case ROM_32_KiB:
         return "32 KiB";
@@ -93,7 +93,7 @@ inline const char* rom_size_to_string(const enum rom_size size) {
  * @param type Value to validate.
  * @returns true if defined; otherwise, false.
  */
-inline bool rom_size_is_valid(const enum rom_size size) {
+static inline bool rom_size_is_valid(const enum rom_size size) {
     switch (size) {
     case ROM_32_KiB:
     case ROM_64_KiB:
@@ -118,7 +118,7 @@ inline bool rom_size_is_valid(const enum rom_size size) {
  * @param size Value to convert.
  * @returns The number of ROM banks.
  */
-inline int rom_size_bank_count(const enum rom_size size) {
+static inline int rom_size_bank_count(const enum rom_size size) {
     switch (size) {
     case ROM_32_KiB:
         return 2;

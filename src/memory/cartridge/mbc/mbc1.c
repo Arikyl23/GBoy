@@ -11,40 +11,33 @@
 #include <stdlib.h>
 
 #include "DEFINES.h"
+#include "memory/cartridge/mbc/mbc_iface.h"
+#include "memory/cartridge/mbc/structs/mbc1_context.h"
 #include "memory/memory_map.h"
 
 #define IS_POW2(x) (x > 0 && (x & (x - 1)) == 0)
 
-struct mbc1_context {
-    byte*  rom;
-    byte*  ram;
-    size_t rom_size;
-    size_t ram_size;
-    byte   ram_enable;
-    byte   rom_bank_number;
-    byte   ram_bank_number;
-    byte   banking_mode;
-    dword  rom_bank_mask;
-    dword  ram_bank_mask;
-};
+LOG_MODULE_SETUP("MBC1", CONFIG_MBC1_MODULE_LOG_LEVEL);
 
-static_assert(
-    sizeof(void*) == sizeof(struct mbc1_context*),
-    "Pointer Size Mismatch!\nMBC1 Context pointer does not map to the same size as void pointer."
-);
-
-static byte mbc1_read(void* ctx, const word addr);
-static void mbc1_write(void* ctx, const word addr, const byte value);
+static byte* mbc1_rom(void* ctx, size_t* size);
+static byte* mbc1_ram(void* ctx, size_t* size);
+static byte  mbc1_read(void* ctx, const word addr);
+static void  mbc1_write(void* ctx, const word addr, const byte value);
 
 static dword calc_rom_addr(const struct mbc1_context* ctx, const word addr);
 static dword calc_ram_addr(const struct mbc1_context* ctx, const word addr);
 
-static const struct mbc_iface m_mbc1_iface =
-    {.read = mbc1_read, .write = mbc1_write, .destroy = mbc1_destroy};
+static const struct mbc_iface m_mbc1_iface = {
+    .rom     = mbc1_rom,
+    .ram     = mbc1_ram,
+    .read    = mbc1_read,
+    .write   = mbc1_write,
+    .destroy = mbc1_destroy
+};
 
 const struct mbc_iface* mbc1_iface(void) { return &m_mbc1_iface; }
 
-void* mbc1_instanciate(const size_t n_rom_banks, const size_t n_ram_banks) {
+void* mbc1_instantiate(const size_t n_rom_banks, const size_t n_ram_banks) {
     // ROM/RAM bank count must be a power of 2 (RAM is allowed to be 0)
     if (!IS_POW2(n_rom_banks) || (!IS_POW2(n_ram_banks) && n_ram_banks != 0)) {
         log_error(
@@ -59,16 +52,16 @@ void* mbc1_instanciate(const size_t n_rom_banks, const size_t n_ram_banks) {
 
     if (n_rom_banks <= 64) {
         // Standard configuration
-        // ROM must exist and cannot be larger than 512 KiB [1,64]
+        // ROM must exist (32 KiB min) and cannot be larger than 512 KiB [2,64]
         // RAM cannot be larger than 32  KiB [0,4]
-        if (n_rom_banks == 0 || n_ram_banks > 4) {
+        if (n_rom_banks < 2 || n_ram_banks > 4) {
             log_error(
                 "Attempted to create a MBC1 in 512 KiB ROM configuration but specified more/less "
                 "ROM/RAM banks than what is supported.\n"
-                "\t[Max,Min] Supported ROM Banks: 64, 1\n"
-                "\tRequested ROM Banks:           %zu\n"
+                "\t[Max,Min] Supported ROM Banks: 64, 2\n"
+                "\t          Requested ROM Banks: %zu\n"
                 "\t[Max,Min] Supported RAM Banks: 4,  0\n"
-                "\tRequested RAM Banks:           %zu",
+                "\t          Requested RAM Banks: %zu",
                 n_rom_banks,
                 n_ram_banks
             );
@@ -82,10 +75,10 @@ void* mbc1_instanciate(const size_t n_rom_banks, const size_t n_ram_banks) {
             log_error(
                 "Attempted to create a MBC1 in 2 MiB ROM configuration but specified more/less "
                 "ROM/RAM banks than what is supported.\n"
-                "\t[Max,Min] Supported ROM Banks: 128, 1\n"
-                "\tRequested ROM Banks:           %zu\n"
+                "\t[Max,Min] Supported ROM Banks: 128, 2\n"
+                "\t          Requested ROM Banks: %zu\n"
                 "\t[Max,Min] Supported RAM Banks: 1,   0\n"
-                "\tRequested RAM Banks:           %zu",
+                "\t          Requested RAM Banks: %zu",
                 n_rom_banks,
                 n_ram_banks
             );
@@ -146,6 +139,38 @@ void mbc1_destroy(void** p_ctx) {
     *p_ctx = NULL; // Prevent double free by forcing passed in dld context pointer to NULL
 
     return;
+}
+
+static byte* mbc1_rom(void* ctx, size_t* size) {
+    if (ctx == NULL) {
+        log_error("MBC1 context is NULL!");
+        return NULL;
+    }
+
+    if (size == NULL) {
+        log_error("Unable to return size. Variable pointer is NULL");
+        return NULL;
+    }
+
+    struct mbc1_context* mbc1_ctx = ctx;
+    *size                         = mbc1_ctx->rom_size;
+    return mbc1_ctx->rom;
+}
+
+static byte* mbc1_ram(void* ctx, size_t* size) {
+    if (ctx == NULL) {
+        log_error("MBC1 context is NULL!");
+        return NULL;
+    }
+
+    if (size == NULL) {
+        log_error("Unable to return size. Variable pointer is NULL");
+        return NULL;
+    }
+
+    struct mbc1_context* mbc1_ctx = ctx;
+    *size                         = mbc1_ctx->ram_size;
+    return mbc1_ctx->ram;
 }
 
 static byte mbc1_read(void* ctx, const word addr) {

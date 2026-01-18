@@ -11,31 +11,34 @@
 
 #include "DEFINES.h"
 #include "memory/cartridge/mbc/mbc_iface.h"
+#include "memory/cartridge/mbc/structs/dld_context.h"
 #include "memory/memory_map.h"
 
-struct dld_context {
-    byte  rom[2 * CART_ROM_BANK_SIZE];
-    byte* ram;
-};
+LOG_MODULE_SETUP("DLD", CONFIG_DLD_MODULE_LOG_LEVEL);
 
-static_assert(
-    sizeof(void*) == sizeof(struct dld_context*),
-    "Pointer Size Mismatch!\n\rDLD Context Pointer does not map to the same size as void pointer."
-);
-
-static byte dld_read(void* ctx, const word addr);
-static void dld_write(void* ctx, const word addr, const byte value);
+static byte* dld_rom(void* ctx, size_t* size);
+static byte* dld_ram(void* ctx, size_t* size);
+static byte  dld_read(void* ctx, const word addr);
+static void  dld_write(void* ctx, const word addr, const byte value);
 
 static const struct mbc_iface m_dld_iface =
-    {.read = dld_read, .write = dld_write, .destroy = dld_destroy};
+    {.rom = dld_rom, .ram = dld_ram, .read = dld_read, .write = dld_write, .destroy = dld_destroy};
 
 const struct mbc_iface* dld_iface(void) { return &m_dld_iface; }
 
-void* dld_instanciate(const size_t n_ram_banks) {
+void* dld_instantiate(const size_t n_rom_banks, const size_t n_ram_banks) {
+    if (n_rom_banks != 2) {
+        log_error(
+            "Attempted to create DLD with more/less than 2 ROM banks.\n"
+            "\tRequested: %.zu",
+            n_rom_banks
+        );
+        return NULL;
+    }
     if (n_ram_banks > 1) {
         log_error(
-            "Attempted to create more ram banks than supported by the DLD MBC\n\r"
-            "\tMax Supported: 1\n\r"
+            "Attempted to create more ram banks than supported by the DLD MBC\n"
+            "\tMax Supported: 1\n"
             "\tRequested:     %zu",
             n_ram_banks
         );
@@ -47,31 +50,59 @@ void* dld_instanciate(const size_t n_ram_banks) {
         log_error("Attempted to create a new DLD context but failed to allocate memory");
         return NULL;
     }
-    ctx->ram = (n_ram_banks == 1) ? malloc(CART_RAM_BANK_SIZE) : NULL;
+    ctx->rom_size = 2 * CART_ROM_BANK_SIZE;
+    if (n_ram_banks == 1) {
+        ctx->ram      = malloc(CART_RAM_BANK_SIZE);
+        ctx->ram_size = CART_RAM_BANK_SIZE;
+    } else {
+        ctx->ram      = NULL;
+        ctx->ram_size = 0;
+    }
 
     return ctx;
 }
 
 void dld_destroy(void** p_ctx) {
-    if (p_ctx == NULL) {
-        log_warn("Attempted to destroy nothing.\n\r"
-                 "\tp_ctx was NULL");
-        return;
-    }
-
-    if (*p_ctx == NULL) {
-        log_warn("Attempted to destroy a context that doesn't exist.\n\r"
-                 "\t*p_ctx was NULL");
-        return;
-    }
+    if (p_ctx == NULL || *p_ctx == NULL) { return; }
 
     struct dld_context* dld_ctx = *p_ctx;
     free(dld_ctx->ram);
-    dld_ctx->ram = NULL; // Unnecessary since we free the whole context afterwards
     free(dld_ctx);
     *p_ctx = NULL; // Prevent double free by forcing passed in dld context pointer to NULL
 
     return;
+}
+
+static byte* dld_rom(void* ctx, size_t* size) {
+    if (ctx == NULL) {
+        log_error("DLD context is NULL!");
+        return NULL;
+    }
+
+    if (size == NULL) {
+        log_error("Unable to return size. Variable pointer is NULL");
+        return NULL;
+    }
+
+    struct dld_context* dld_ctx = ctx;
+    *size                       = dld_ctx->rom_size;
+    return dld_ctx->rom;
+}
+
+static byte* dld_ram(void* ctx, size_t* size) {
+    if (ctx == NULL) {
+        log_error("DLD context is NULL!");
+        return NULL;
+    }
+
+    if (size == NULL) {
+        log_error("Unable to return size. Variable pointer is NULL");
+        return NULL;
+    }
+
+    struct dld_context* dld_ctx = ctx;
+    *size                       = dld_ctx->ram_size;
+    return dld_ctx->ram;
 }
 
 static byte dld_read(void* ctx, const word addr) {
@@ -85,8 +116,8 @@ static byte dld_read(void* ctx, const word addr) {
     if (addr >= ADDR_CART_ROM_START && addr <= ADDR_CART_ROM_END) {
         byte value = dld_ctx->rom[addr - ADDR_CART_ROM_START];
         log_debug(
-            "DLD ROM Read:\n\r"
-            "\tADDR: 0x%.4X\n\r"
+            "DLD ROM Read:\n"
+            "\tADDR: 0x%.4X\n"
             "\tValue: 0x%.2X",
             addr,
             value
@@ -95,8 +126,8 @@ static byte dld_read(void* ctx, const word addr) {
     } else if (dld_ctx->ram != NULL && addr >= ADDR_CART_RAM_START && addr <= ADDR_CART_RAM_END) {
         byte value = dld_ctx->ram[addr - ADDR_CART_RAM_START];
         log_debug(
-            "DLD RAM Read:\n\r"
-            "\tADDR: 0x%.4X\n\r"
+            "DLD RAM Read:\n"
+            "\tADDR: 0x%.4X\n"
             "\tValue: 0x%.2X",
             addr,
             value
@@ -104,8 +135,8 @@ static byte dld_read(void* ctx, const word addr) {
         return value;
     } else {
         log_warn(
-            "DLD Out-of-Bounds Read:\n\r"
-            "\tADDR: 0x%.4X\n\r"
+            "DLD Out-of-Bounds Read:\n"
+            "\tADDR: 0x%.4X\n"
             "\tValue: 0xFF",
             addr
         );
@@ -126,8 +157,8 @@ static void dld_write(void* ctx, const word addr, const byte value) {
         return;
     } else if (dld_ctx->ram != NULL && addr >= ADDR_CART_RAM_START && addr <= ADDR_CART_RAM_END) {
         log_debug(
-            "DLD RAM Write:\n\r"
-            "\tADDR: 0x%.4X\n\r"
+            "DLD RAM Write:\n"
+            "\tADDR: 0x%.4X\n"
             "\tValue: 0x%.2X",
             addr,
             value
@@ -136,9 +167,9 @@ static void dld_write(void* ctx, const word addr, const byte value) {
         return;
     } else {
         log_warn(
-            "DLD Out-of-Bounds Write:\n\r"
-            "\tADDR: 0x%.4X\n\r"
-            "\tValue: 0x%.2X\n\r"
+            "DLD Out-of-Bounds Write:\n"
+            "\tADDR: 0x%.4X\n"
+            "\tValue: 0x%.2X\n"
             "\tWrite Ignored.",
             addr,
             value

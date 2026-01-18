@@ -11,6 +11,8 @@
 #include "cpu/registers/registers.h"
 #include "testing.h"
 
+LOG_MODULE_SETUP_DEFAULT("UNIT TEST REGISTERS");
+
 static bool validate_memory_isolation(
     const byte*  p_reg_before,
     const byte*  p_reg_after,

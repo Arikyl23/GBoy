@@ -39,7 +39,7 @@ enum ram_size {
  * @param type Value to convert.
  * @returns Static cstring containing the readable name.
  */
-inline const char* ram_size_to_string(const enum ram_size size) {
+static inline const char* ram_size_to_string(const enum ram_size size) {
     switch (size) {
     case RAM_NONE:
         return "NONE";
@@ -63,7 +63,7 @@ inline const char* ram_size_to_string(const enum ram_size size) {
  * @param type Value to validate.
  * @returns true if defined; otherwise, false.
  */
-inline bool ram_size_is_valid(const enum ram_size size) {
+static inline bool ram_size_is_valid(const enum ram_size size) {
     return (int)size >= 0 && (int)size < 0x06;
 }
 
@@ -72,7 +72,7 @@ inline bool ram_size_is_valid(const enum ram_size size) {
  * @param size Value to convert.
  * @returns The number of RAM banks.
  */
-inline int ram_size_bank_count(const enum ram_size size) {
+static inline int ram_size_bank_count(const enum ram_size size) {
     switch (size) {
     default:
     case RAM_NONE:

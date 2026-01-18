@@ -1,5 +1,5 @@
 target_sources(GBoy_Internal
-    PRIVATE
+    INTERFACE
         mmu.c
 )
 

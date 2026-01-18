@@ -2,22 +2,25 @@
  * @file unit_test_dld.c
  * @brief Comprehensive Unit tests for the DLD Memory Bank Controller.
  */
+#include <stdlib.h>
+
 #include "DEFINES.h"
 #include "memory/cartridge/mbc/dld.h"
+#include "memory/cartridge/mbc/structs/dld_context.h"
 #include "memory/memory_map.h"
 #include "testing.h"
 
-#include "memory/cartridge/mbc/dld.c"
+LOG_MODULE_SETUP_DEFAULT("UNIT TEST DLD");
 
 static const struct mbc_iface* fixture_iface;
 static struct dld_context*     fixture_ctx;
 
 static bool test_dld_module(void);
 
-static bool test_instanciation(void);
-static bool test_instanciate_no_ram(void);
-static bool test_instanciate_ram(void);
-static bool test_instanciate_invalid(void);
+static bool test_instantiation(void);
+static bool test_instantiate_no_ram(void);
+static bool test_instantiate_ram(void);
+static bool test_instantiate_invalid(void);
 
 static bool test_interface(void);
 static bool test_interface_get(void);
@@ -29,31 +32,28 @@ static void setup_clear_fixtures(void);
 static int  setup_fill_fixtures(const size_t n_ram_banks);
 
 int main(void) {
-    // Mask all logs lower than this (we will get spammed with debug/warn logs otherwise)
-    log_set_level(LOG_ERROR);
-
     // When main returns 0, that indicates a success
     return (test_dld_module() == true) ? 0 : 1;
 }
 
 static bool test_dld_module(void) {
-    ASSERT_TRUE(test_instanciation(), "DLD Instancation Test(s) Failed");
+    ASSERT_TRUE(test_instantiation(), "DLD Instantation Test(s) Failed");
     ASSERT_TRUE(test_interface(), "DLD Interface Test(s) Failed");
 
     return true;
 }
 
-static bool test_instanciation(void) {
-    ASSERT_TRUE(test_instanciate_no_ram(), "Test Instancaite with no RAM Failed");
-    ASSERT_TRUE(test_instanciate_ram(), "Test Instancate with RAM Failed");
-    ASSERT_TRUE(test_instanciate_invalid(), "Test Innstancate with invalid parameters Failed");
+static bool test_instantiation(void) {
+    ASSERT_TRUE(test_instantiate_no_ram(), "Test Instantiate with no RAM Failed");
+    ASSERT_TRUE(test_instantiate_ram(), "Test Instancate with RAM Failed");
+    ASSERT_TRUE(test_instantiate_invalid(), "Test Instantiate with invalid parameters Failed");
     return true;
 }
 
-static bool test_instanciate_no_ram(void) {
+static bool test_instantiate_no_ram(void) {
     setup_clear_fixtures();
 
-    fixture_ctx = dld_instanciate(0);
+    fixture_ctx = dld_instantiate(2, 0);
     ASSERT_NOT_NULL(fixture_ctx, "Failed to instancate DLD MBC with no RAM");
 
     ASSERT_NULL(fixture_ctx->ram, "DLD context created with RAM instead of without");
@@ -64,10 +64,10 @@ static bool test_instanciate_no_ram(void) {
     return true;
 }
 
-static bool test_instanciate_ram(void) {
+static bool test_instantiate_ram(void) {
     setup_clear_fixtures();
 
-    fixture_ctx = dld_instanciate(1);
+    fixture_ctx = dld_instantiate(2, 1);
     ASSERT_NOT_NULL(fixture_ctx, "Failed to instancate DLD MBC with RAM");
 
     ASSERT_NOT_NULL(fixture_ctx->ram, "DLD context created without RAM instead of with");
@@ -78,11 +78,20 @@ static bool test_instanciate_ram(void) {
     return true;
 }
 
-static bool test_instanciate_invalid(void) {
+static bool test_instantiate_invalid(void) {
     setup_clear_fixtures();
 
-    fixture_ctx = dld_instanciate(2);
-    ASSERT_NULL(fixture_ctx, "Instanciated DLD context with invalid parameters");
+    fixture_ctx = dld_instantiate(0, 1);
+    ASSERT_NULL(fixture_ctx, "Instantiated DLD context with invalid parameters");
+
+    fixture_ctx = dld_instantiate(1, 1);
+    ASSERT_NULL(fixture_ctx, "Instantiated DLD context with invalid parameters");
+
+    fixture_ctx = dld_instantiate(3, 1);
+    ASSERT_NULL(fixture_ctx, "Instantiated DLD context with invalid parameters");
+
+    fixture_ctx = dld_instantiate(2, 2);
+    ASSERT_NULL(fixture_ctx, "Instantiated DLD context with invalid parameters");
 
     return true;
 }
@@ -272,7 +281,7 @@ static int setup_fill_fixtures(const size_t n_ram_banks) {
     setup_clear_fixtures();
 
     fixture_iface = dld_iface();
-    fixture_ctx   = dld_instanciate(n_ram_banks);
+    fixture_ctx   = dld_instantiate(2, n_ram_banks);
     if (fixture_ctx == NULL) { return -1; }
 
     for (int i = 0; i < CART_ROM_BANK_SIZE * 2; i++) {

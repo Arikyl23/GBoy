@@ -81,7 +81,7 @@ enum cartridge_type {
  * @param type Value to convert.
  * @returns Static cstring containing the readable name.
  */
-inline const char* cartridge_type_to_string(const enum cartridge_type type) {
+static inline const char* cartridge_type_to_string(const enum cartridge_type type) {
     switch (type) {
     case CART_ROM_ONLY:
         return "ROM_ONLY";
@@ -149,7 +149,7 @@ inline const char* cartridge_type_to_string(const enum cartridge_type type) {
  * @param type Value to validate.
  * @returns true if defined; otherwise, false.
  */
-inline bool cartridge_type_is_valid(const enum cartridge_type type) {
+static inline bool cartridge_type_is_valid(const enum cartridge_type type) {
     switch (type) {
     case CART_ROM_ONLY:
     case CART_MBC1:
