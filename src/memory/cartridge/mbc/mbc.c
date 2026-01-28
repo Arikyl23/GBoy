@@ -200,47 +200,41 @@ int mbc_load_ram(struct mbc* mbc, const byte* data, const size_t size) {
     return 0;
 }
 
-int mbc_dump_rom(struct mbc* mbc, byte* data, const size_t size) {
+byte* mbc_dump_rom(struct mbc* mbc, size_t* p_size) {
     if (null_mbc_check(mbc)) {
         log_error("Invalid MBC context");
-        return -1;
+        return NULL;
     }
 
-    size_t rom_size = 0;
-    byte*  rom      = mbc->iface->rom(mbc->ctx, &rom_size);
-
-    if (data == NULL || size < rom_size) {
-        log_error("Insuffient data buffer size.");
-        return -1;
+    byte*  rom        = mbc->iface->rom(mbc->ctx, p_size);
+    size_t array_size = sizeof(byte) * *p_size;
+    byte*  data       = malloc(array_size);
+    if (data == NULL) {
+        log_error("Failed to allocate memory for ROM buffer. Ran out of Memory.");
+        return NULL;
     }
+    memcpy(data, rom, array_size);
 
-    memcpy(data, rom, rom_size);
-
-    return 0;
+    return data;
 }
 
-int mbc_dump_ram(struct mbc* mbc, byte* data, const size_t size) {
+byte* mbc_dump_ram(struct mbc* mbc, size_t* p_size) {
     if (null_mbc_check(mbc)) {
         log_error("Invalid MBC context");
-        return -1;
+        return NULL;
     }
 
-    size_t ram_size = 0;
-    byte*  ram      = mbc->iface->ram(mbc->ctx, &ram_size);
-
-    if (data == NULL || size < ram_size) {
-        log_error("Insuffient data buffer size.");
-        return -1;
-    }
-
-    if (ram == NULL || ram_size == 0) {
+    byte* ram = mbc->iface->ram(mbc->ctx, p_size);
+    if (ram == NULL || *p_size == 0) {
         log_warn("No RAM to dump");
-        return 0;
+        return NULL;
     }
 
-    memcpy(data, ram, ram_size);
+    size_t array_size = sizeof(byte) * *p_size;
+    byte*  data       = malloc(array_size);
+    memcpy(data, ram, array_size);
 
-    return 0;
+    return data;
 }
 
 byte mbc_read(struct mbc* mbc, const word addr) {
@@ -253,11 +247,7 @@ void mbc_write(struct mbc* mbc, const word addr, const byte value) {
 }
 
 void mbc_cleanup(struct mbc** p_mbc) {
-
-    if (p_mbc == NULL || *p_mbc == NULL) {
-        log_warn("No MBC to cleanup");
-        return;
-    }
+    if (p_mbc == NULL || *p_mbc == NULL) { return; }
 
     struct mbc* mbc = *p_mbc;
     if (mbc->iface != NULL) { mbc->iface->destroy(&mbc->ctx); }

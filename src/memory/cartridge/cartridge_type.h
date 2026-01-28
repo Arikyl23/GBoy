@@ -184,3 +184,44 @@ static inline bool cartridge_type_is_valid(const enum cartridge_type type) {
         return false;
     }
 }
+
+/**
+ * @brief Checks if the Cartridge Type contains a battery.
+ * @param type Value to check.
+ * @returns true if it contains a battery, false otherwise.
+ */
+static inline bool cartridge_type_contains_battery(const enum cartridge_type type) {
+    switch (type) {
+    case CART_MBC1_RAM_BATTERY:
+    case CART_MBC2_BATTERY:
+    case CART_ROM_RAM_BATTERY:
+    case CART_MMM01_RAM_BATTERY:
+    case CART_MBC3_TIMER_BATTERY:
+    case CART_MBC3_TIMER_RAM_BATTERY:
+    case CART_MBC3_RAM_BATTERY:
+    case CART_MBC5_RAM_BATTERY:
+    case CART_MBC5_RUMBLE_RAM_BATTERY:
+    case CART_MBC7_SENSOR_RUMBLE_RAM_BATTERY:
+    case CART_HuC1_RAM_BATTERY:
+        return true;
+    case CART_ROM_ONLY:
+    case CART_MBC1:
+    case CART_MBC1_RAM:
+    case CART_MBC2:
+    case CART_ROM_RAM:
+    case CART_MMM01:
+    case CART_MMM01_RAM:
+    case CART_MBC3:
+    case CART_MBC3_RAM:
+    case CART_MBC5:
+    case CART_MBC5_RAM:
+    case CART_MBC5_RUMBLE:
+    case CART_MBC5_RUMBLE_RAM:
+    case CART_MBC6:
+    case CART_POCKET_CAMERA:
+    case CART_BANDAI_TAMA5:
+    case CART_HuC3:
+    default:
+        return false;
+    }
+}

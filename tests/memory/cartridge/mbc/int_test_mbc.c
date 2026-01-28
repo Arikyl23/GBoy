@@ -16,7 +16,7 @@
 
 LOG_MODULE_SETUP_DEFAULT("INT TEST MBC");
 
-static bool test_mbc_module_integration(void);
+static bool test_cartridge_module_integration(void);
 
 static bool test_dld_integration(void);
 static bool test_dld_rom_only(void);
@@ -37,9 +37,9 @@ static bool test_iface_eq(
     const struct mbc_iface* expected_iface
 );
 
-int main(void) { return (test_mbc_module_integration() == true) ? 0 : 1; }
+int main(void) { return (test_cartridge_module_integration() == true) ? 0 : 1; }
 
-static bool test_mbc_module_integration(void) {
+static bool test_cartridge_module_integration(void) {
     ASSERT_TRUE(test_dld_integration(), "DLD Integration Test(s) Failed");
     ASSERT_TRUE(test_mbc1_integration(), "MBC1 Integration Test(s) Failed");
     return true;
