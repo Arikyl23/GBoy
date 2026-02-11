@@ -20,70 +20,79 @@ Currently, a CMake build system is in use. It will automatically configure the p
 
 I have written a script to wrap the CMake build system greatly simplifing the build process. It can be located inside of the tools folder. This script is safe to run from anywhere as it operates off its own location instead of the terminals.
 
-### Generating The Build Folder
+### Buildtools Script
 
-To generate the build folder, the following command can be used:
+The buildtools script is a power bash script that handles everything related to generating, building, testing, and running GBoy.
 
-```sh
-buildtools.sh generate
-```
+To build GBoy, simply run the following command:
 
-**Note:** This always defaults to a **DEBUG** configuration.
-
-**Note:** This must always be done at least once before starting an actual build.
-
-### Compiling the Project
-
-To compile the project, the following command can be used:
-
-```sh
+```bash
 buildtools.sh build
 ```
 
-**Note:** This always defaults to a **DEBUG** configuration.
-
-### Build Configurations
-
-Currently, only two build configurations are supported: **DEBUG** and **RELEASE**. The build script will always default to **DEBUG** unless instructed otherwise.
-
-Both the ``generate`` and ``build`` modes can have their configuration specified. Below is an example for each:
-
-```sh
-# Generates the build folder for a RELEASE build
-buildtools.sh generate --configuration RELEASE
-
-# Compiles the project with the RELEASE configuration
-buildtools.sh build RELEASE
+**Note:** This always defaults to a **DEBUG** configuration. To build a different configuration, add it after the build command option like so:
+```bash
+buildtools.sh build release
 ```
 
-**Note:** Both configurations are mantained completely seperately from each other allowing you to have both a **DEBUG** and **RELEASE** configuration built at the same time.
+#### Build Configurations
 
-### Clean Building
+Currently, there are 3 build configurations that are supported:
+- **DEBUG**
+    - Debug configuration. Includes debug symbols and disables optimization in the build.
+- **RELEASE**
+    - Release configuration. Removes debug symbols and enables optimization in the build.
+- **ASAN**
+    - ASan Configuration. Same as **DEBUG** configuration with the Address Sanitizer (ASan) also enabled.
 
-When a change is made to a ``CMakeList.txt`` file, you should almost always completely regenerate the build files. This is to prevent accidentally building with stale Make files. There are several methods provided in the build script to handle this. This is generally referred to as a clean build:
+**Note** Most commands in the build script will always default to **DEBUG** unless instructed otherwise.
 
-```sh
+Every command can have the configuration specified. This allows multiple configurations to be built and managed at the same time. Below are some examples of a few commands:
+
+```bash
+# Removes releases build artifacts from the build folder
+buildtools.sh clean release
+
+# Compiles the project with the RELEASE configuration
+buildtools.sh build debug
+
+# Tests the currently build ASAN configuration with CTest
+buildtools.sh test asan
+```
+
+**Note:** All configurations are mantained completely seperately from each other allowing you to have multiple configurations built at the same time.
+
+#### Clean Building
+
+When a change is made to a ``CMakeList.txt`` file, you should almost always completely regenerate the build files. This is to prevent accidentally building with stale Make files. This is generally referred to as a clean build. There are several methods provided in the build script to handle this:
+
+```bash
 # This purges the entire build folder included all currently generated configurations
 # Use this to completely purge the entire project
 buildtools.sh clean
 
 # This only purges the respective configuration build folder
 # In this case, it is purging the DEBUG build folder
-buildtools.sh generate -clean
+buildtools.sh clean debug
 
-# Same as the command above except it acts only on the RELEASE configuration
-buildtools.sh generate -clean --configuration RELEASE
+# This performs the previous command before building a debug build
+# This is the easiest and most robust way to handle clean building
+buildtools.sh build --clean
 ```
 
-### VS Code Integration
+#### VS Code Integration
 
-Since we are using a script to control CMake. The VS Code CMake extension should not be used. This means VS Code won't be in charge of the configuration and we need to tell it how to understand the project. To get VS Code to correctly detect the project files. The ``-vsc_integration`` command can be added to the generation mode of the script. Below is an example of its use:
+Since we are using a script to control CMake. The VS Code CMake extension should not be used. This means VS Code won't be in charge of the configuration and we need to tell it how to understand the project. To get VS Code to correctly detect the project files. The ``--vsc`` option can be added to the build command. Below is an example of its use:
 
 ```sh
-buildtools.sh generate -vsc_integration
+# Generates the project with VS Code Integration enabled
+# If the project is already built, a clean build may be needed to ensure this takes effect
+buildtools.sh build --vsc
 ```
 
-This causes the script to instruct CMake to create a ``compile_commands.json`` file inside the build folder. Inside of VS Code, add the path to this file under the ``compileCommands`` option in your ``c_cpp_properties.json`` file. Below is an example ``c_cpp_properties.json`` file:
+This causes the script to instruct CMake to create a ``compile_commands.json`` file inside the configuration build folder during generation. When a generation or build stage finishes, it checks for the presence of this file in the target configuration build folder. If found, a symlink to it is generated inside the root build folder (`GBoy/build/compile_commands.json`). This symlink will always be set to the last completed generation/build stage.
+
+Inside of VS Code, the ``compileCommands`` option in your ``c_cpp_properties.json`` file should be set to the path to the symlink (`GBoy/build/compile_commands.json`). This ensures VS code will always be automatically sync'd to the build system. Below is an example of what the ``c_cpp_properties.json`` file should look like:
 
 ```json
 {
@@ -96,23 +105,18 @@ This causes the script to instruct CMake to create a ``compile_commands.json`` f
             "cStandard": "c17",
             "cppStandard": "gnu++17",
             "intelliSenseMode": "linux-gcc-x64",
-            "compileCommands": [
-                "${workspaceFolder}/build/debug/compile_commands.json",
-                "${workspaceFolder}/build/release/compile_commands.json"
-            ]
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json"
         }
     ],
     "version": 4
 }
 ```
 
-**Note:** Due to how CMake works, there is a ``compile_commands.json`` file for each configuration. VS Code won't throw an error if it can't find the file. It will only highlight it with a warning. This makes it safe to blindly include both possible locations so you never have to worry about the files actual existance.
+**Note:** If you auto-generated your ``c_cpp_properties.json`` file, there may be an option called ``configurationProvider``. This option tells VS Code what extension should be used to configure the Project and resulting Intellisense. Since CMake is handled externally in the build script, this option should not be set. You may need to also disable the CMake extension for this workspace if it continues to run on its own.
 
-**Note:** If you auto generated your ``c_cpp_properties.json`` file, there may be an option called ``configurationProvider``. This option tells VS Code what extension should be used to configure the Project and resulting Intellisense. Since CMake is handled externally in the build script, this option should not be set. You may need to also disable the CMake extension for this workspace if it continues to run on its own.
+### CMake Extension
 
-#### CMake Extension
-
-If you choose to use the CMake extension in VS Code, you should not invoke the build script from the command line. This can cause instability due to the conflicting ways each one calls CMake.
+If you choose to use the CMake extension in VS Code, you should not invoke the build script from the command line. This can cause instability due to the conflicting ways each one calls CMake. Since I do not use the extension, I cannot provide any advice with setting it up for GBoy.
 
 ## Debugging
 
@@ -127,7 +131,7 @@ To use VS Code to debug GBoy, follow these steps:
 1. Ensure you have built the project with the **DEBUG** configuration.
 2. Create a ``launch.json`` file inside your local ``.vscode`` directory.
 3. Inside the ``launch.json`` add a ``GDB (launch)`` configuration.
-4. Set the ``program`` property to where the executable is located. It will most likely be located at ``build/debug/bin/GBoy`` if you did step 1 correctly.
+4. Set the ``program`` property to where the executable is located. It will most likely be located at ``GBoy/build/debug/bin/GBoy`` if you did step 1 correctly.
 
 Below is an example of how your ``launch.json`` should look:
 

@@ -1,8 +1,13 @@
 cmake_minimum_required(VERSION 3.28.3)
 project(GBoy LANGUAGES C VERSION "0.1.0")
 
-# Always generate the compile_commands.json file
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
+if(ENABLE_ASAN)
+    message(STATUS "AddressSanitizer enabled")
+    # These flags must be applied to both compilation and linking
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address)
+endif()
 
 # Configuration Header (Global #define statements)
 set(CONFIG_HEADER "${CMAKE_SOURCE_DIR}/src/configuration.h")
