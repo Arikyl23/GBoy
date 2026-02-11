@@ -48,4 +48,8 @@
 #    define CONFIG_CARTRIDGE_MODULE_LOG_LEVEL CONFIG_DEFAULT_CORE_LOG_LEVEL
 #endif
 
+// Utilites Modules
+#ifndef CONFIG_STRING_MODULE_LOG_LEVEL
+#    define CONFIG_STRING_MODULE_LOG_LEVEL LOG_INFO // Always log regardless of testing
+#endif
 // -----
