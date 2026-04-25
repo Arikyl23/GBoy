@@ -26,6 +26,8 @@
 
 #define ADDR_CART_ROM_START      0x0000 /** @brief Cartridge ROM start */
 #define ADDR_CART_ROM_LOW_START  0x0000 /** @brief Cartridge ROM low bank start */
+#define ADDR_BOOT_ROM_START      0x0000 /** @brief Boot ROM start */
+#define ADDR_BOOT_ROM_END        0x00FF /** @brief Boot ROM end */
 #define ADDR_CART_ROM_LOW_END    0x3FFF /** @brief Cartridge ROM low bank end */
 #define ADDR_CART_ROM_HIGH_START 0x4000 /** @brief Cartridge ROM high bank start */
 #define ADDR_CART_ROM_HIGH_END   0x7FFF /** @brief Cartridge ROM high bank end */
@@ -44,8 +46,8 @@
 #define ADDR_ECHO_RAM_END        0xFDFF /** @brief Internal Echo RAM end */
 #define ADDR_OAM_START           0xFE00 /** @brief Internal Object Attribute Memory start */
 #define ADDR_OAM_END             0xFE9F /** @brief Internal Object Attribute Memory end */
-#define ADDR_BLANK_START         0xFEA0 /** @brief Start of unusable address range. Causes Bugs. */
-#define ADDR_BLANK_END           0xFEFF /** @brief End of unusable address range. Causes Bugs. */
+#define ADDR_PROHIBITED_START    0xFEA0 /** @brief Start of unusable address range. Causes Bugs. */
+#define ADDR_PROHIBITED_END      0xFEFF /** @brief End of unusable address range. Causes Bugs. */
 #define ADDR_IO_REGISTERS_START  0xFF00 /** @brief Internal I/O registers start */
 #define ADDR_IO_REGISTERS_END    0xFF7F /** @brief Internal I/O registers end */
 #define ADDR_HRAM_START          0xFF80 /** @brief Internal High RAM start */

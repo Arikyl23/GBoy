@@ -254,16 +254,20 @@ function test {
         return $ERR_NO_BUILD 
     fi
 
-    echo -e "${YELLOW}Running Tests...${NC}"
-    ctest --test-dir "$TEST_DIR" --output-on-failure
-    RC=$?
+    echo -e "${YELLOW}Starting Tests...${NC}"
+    local TEST_GROUPS="Unit Integration"
+    for label in $TEST_GROUPS; do
+        echo -e "${YELLOW}Running $label Tests...${NC}"
+        ctest --test-dir "$TEST_DIR" -L "$label" --output-on-failure
+        RC=$?
+        if [[ $RC != 0 ]]; then
+            echo -e "${RED}$label Tests Failed${NC}"
+            return $RC
+        fi
+        echo -e "${GREEN}$label Tests Completed${NC}"
+    done
 
-    if [[ $RC != 0 ]]; then
-        echo -e "${RED}Tests Failed${NC}"
-        return $RC
-    fi
-
-    echo -e "${GREEN}Tests Completed Successfully${NC}"
+    echo -e "${GREEN}All Tests Completed${NC}"
     return 0
 }
 

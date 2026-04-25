@@ -20,7 +20,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/")
 string(LENGTH "${CMAKE_SOURCE_DIR}/" SOURCE_PATH_SIZE)
 add_definitions(-DPROJECT_SOURCE_DIR_SIZE=${SOURCE_PATH_SIZE})
 
-# Add External Libraries (Require own compilation)
+# Add External Vendored Libraries (Require own compilation)
 add_subdirectory(vendored/log.c-master)
 add_subdirectory(vendored/SDL-release-3.4.0 EXCLUDE_FROM_ALL)
 
@@ -75,5 +75,6 @@ target_include_directories(GBoy_Internal_Test
 add_executable(GBoy src/main.c)
 target_link_libraries(GBoy PRIVATE GBoy_Internal_Prod)
 
+# ----- Testing -----
 enable_testing()
 add_subdirectory(tests)

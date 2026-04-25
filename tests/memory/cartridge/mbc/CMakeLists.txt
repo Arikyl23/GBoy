@@ -1,23 +1,35 @@
 # Add DLD Unit Tests
-add_executable(unit_test_memory_cartridge_mbc_dld unit_test_dld.c)
-target_link_libraries(unit_test_memory_cartridge_mbc_dld PRIVATE GBoy_Internal_Test)
+set(code_files unit_test_dld.c)
+set(exec_name unit_test_memory_cartridge_mbc_dld)
+set(test_name "[UNIT] Memory/Cartridge/MBC/DLD")
+add_executable(${exec_name} ${code_files})
+target_link_libraries(${exec_name} PRIVATE GBoy_Internal_Test)
 add_test(
-    NAME "[UNIT] Memory/Cartridge/MBC/DLD"
-    COMMAND unit_test_memory_cartridge_mbc_dld
+    NAME ${test_name}
+    COMMAND ${exec_name}
 )
+set_tests_properties(${test_name} PROPERTIES LABELS "Unit")
 
 # Add MBC1 Unit Tests
-add_executable(unit_test_memory_cartridge_mbc_mbc1 unit_test_mbc1.c)
-target_link_libraries(unit_test_memory_cartridge_mbc_mbc1 PRIVATE GBoy_Internal_Test)
+set(code_files unit_test_mbc1.c)
+set(exec_name "unit_test_memory_cartridge_mbc_mbc1")
+set(test_name "[UNIT] Memory/Cartridge/MBC/MBC1")
+add_executable(${exec_name} ${code_files})
+target_link_libraries(${exec_name} PRIVATE GBoy_Internal_Test)
 add_test(
-    NAME "[UNIT] Memory/Cartridge/MBC/MBC1"
-    COMMAND unit_test_memory_cartridge_mbc_mbc1
+    NAME ${test_name}
+    COMMAND ${exec_name}
 )
+set_tests_properties(${test_name} PROPERTIES LABELS "Unit")
 
 # Add MBC Integration Tests
-add_executable(int_test_memory_cartridge_mbc int_test_mbc.c)
-target_link_libraries(int_test_memory_cartridge_mbc PRIVATE GBoy_Internal_Test)
+set(code_files int_test_mbc.c)
+set(exec_name "int_test_memory_cartridge_mbc")
+set(test_name "[INT] Memory/Cartridge/MBC")
+add_executable(${exec_name} ${code_files})
+target_link_libraries(${exec_name} PRIVATE GBoy_Internal_Test)
 add_test(
-    NAME "[INT] Memory/Cartridge/MBC"
-    COMMAND int_test_memory_cartridge_mbc
+    NAME ${test_name}
+    COMMAND ${exec_name}
 )
+set_tests_properties(${test_name} PROPERTIES LABELS "Integration")

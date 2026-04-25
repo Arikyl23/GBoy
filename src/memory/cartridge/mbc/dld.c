@@ -5,7 +5,6 @@
  */
 #include "memory/cartridge/mbc/dld.h"
 
-#include <assert.h>
 #include <log.h>
 #include <stdlib.h>
 
