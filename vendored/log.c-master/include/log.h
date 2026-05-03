@@ -8,27 +8,46 @@
 #ifndef LOG_H
 #define LOG_H
 
-#include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <time.h>
 
 #define LOG_VERSION "0.1.0"
 
 typedef struct {
-  va_list ap;
-  const char *fmt;
-  const char *file;
-  struct tm *time;
-  void *udata;
-  int line;
-  int level;
+    va_list     ap;
+    const char* fmt;
+    const char* file;
+    const char* module; // Added: Track the module name
+    struct tm*  time;
+    void*       udata;
+    int         line;
+    int         level;
 } log_Event;
 
-typedef void (*log_LogFn)(log_Event *ev);
-typedef void (*log_LockFn)(bool lock, void *udata);
+typedef void (*log_LogFn)(log_Event* ev);
+typedef void (*log_LockFn)(bool lock, void* udata);
 
-enum { LOG_TRACE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_FATAL };
+enum {
+    LOG_TRACE,
+    LOG_DEBUG,
+    LOG_INFO,
+    LOG_WARN,
+    LOG_ERROR,
+    LOG_FATAL
+};
+
+#define LOG_MODULE_SETUP_DEFAULT(name)                                                             \
+    static const char* log_module_ptr = name;                                                      \
+    static int         log_module_lvl = LOG_INFO;
+
+#define LOG_MODULE_SETUP(name, level)                                                              \
+    static const char* log_module_ptr = name;                                                      \
+    static int         log_module_lvl = level;
+
+#define GET_MODULE_NAME  (log_module_ptr == NULL ? "Global" : log_module_ptr)
+#define GET_MODULE_LEVEL log_module_lvl
 
 // NOT ORIGINAL CODE
 // =================
@@ -39,23 +58,52 @@ enum { LOG_TRACE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_FATAL };
 
 #define __REL_FILE__ (&__FILE__[PROJECT_SOURCE_DIR_SIZE])
 
-#define log_trace(...) log_log(LOG_TRACE, __REL_FILE__, __LINE__, __VA_ARGS__)
-#define log_debug(...) log_log(LOG_DEBUG, __REL_FILE__, __LINE__, __VA_ARGS__)
-#define log_info(...)  log_log(LOG_INFO,  __REL_FILE__, __LINE__, __VA_ARGS__)
-#define log_warn(...)  log_log(LOG_WARN,  __REL_FILE__, __LINE__, __VA_ARGS__)
-#define log_error(...) log_log(LOG_ERROR, __REL_FILE__, __LINE__, __VA_ARGS__)
-#define log_fatal(...) log_log(LOG_FATAL, __REL_FILE__, __LINE__, __VA_ARGS__)
+#define log_trace(...)                                                                             \
+    do {                                                                                           \
+        if (LOG_TRACE >= GET_MODULE_LEVEL)                                                         \
+            log_log(LOG_TRACE, __REL_FILE__, GET_MODULE_NAME, __LINE__, __VA_ARGS__);              \
+    } while (0)
+
+#define log_debug(...)                                                                             \
+    do {                                                                                           \
+        if (LOG_DEBUG >= GET_MODULE_LEVEL)                                                         \
+            log_log(LOG_DEBUG, __REL_FILE__, GET_MODULE_NAME, __LINE__, __VA_ARGS__);              \
+    } while (0)
+
+#define log_info(...)                                                                              \
+    do {                                                                                           \
+        if (LOG_INFO >= GET_MODULE_LEVEL)                                                          \
+            log_log(LOG_INFO, __REL_FILE__, GET_MODULE_NAME, __LINE__, __VA_ARGS__);               \
+    } while (0)
+
+#define log_warn(...)                                                                              \
+    do {                                                                                           \
+        if (LOG_WARN >= GET_MODULE_LEVEL)                                                          \
+            log_log(LOG_WARN, __REL_FILE__, GET_MODULE_NAME, __LINE__, __VA_ARGS__);               \
+    } while (0)
+
+#define log_error(...)                                                                             \
+    do {                                                                                           \
+        if (LOG_ERROR >= GET_MODULE_LEVEL)                                                         \
+            log_log(LOG_ERROR, __REL_FILE__, GET_MODULE_NAME, __LINE__, __VA_ARGS__);              \
+    } while (0)
+
+#define log_fatal(...)                                                                             \
+    do {                                                                                           \
+        if (LOG_FATAL >= GET_MODULE_LEVEL)                                                         \
+            log_log(LOG_FATAL, __REL_FILE__, GET_MODULE_NAME, __LINE__, __VA_ARGS__);              \
+    } while (0)
 
 // =================
 // NOT ORIGINAL CODE
 
 const char* log_level_string(int level);
-void log_set_lock(log_LockFn fn, void *udata);
-void log_set_level(int level);
-void log_set_quiet(bool enable);
-int log_add_callback(log_LogFn fn, void *udata, int level);
-int log_add_fp(FILE *fp, int level);
+void        log_set_lock(log_LockFn fn, void* udata);
+void        log_set_level(int level);
+void        log_set_quiet(bool enable);
+int         log_add_callback(log_LogFn fn, void* udata, int level);
+int         log_add_fp(FILE* fp, int level);
 
-void log_log(int level, const char *file, int line, const char *fmt, ...);
+void log_log(int level, const char* file, const char* module, int line, const char* fmt, ...);
 
 #endif

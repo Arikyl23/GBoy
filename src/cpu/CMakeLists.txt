@@ -1,5 +1,5 @@
-target_sources(lib_GBoy
-    PRIVATE
+target_sources(GBoy_Internal
+    INTERFACE
         registers/registers.c
         alu/alu.c
 )

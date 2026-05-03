@@ -9,6 +9,8 @@
 #include "cpu/alu/alu.h"
 #include "testing.h"
 
+LOG_MODULE_SETUP_DEFAULT("UNIT TEST ALU");
+
 static bool test_alu_module(void);
 
 static bool test_8bit_operations(void);
