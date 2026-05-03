@@ -5,6 +5,8 @@
  */
 #pragma once
 
+#include <stddef.h>
+
 #include "DEFINES.h"
 #include "memory/bus.h"
 #include "memory/cartridge/cartridge.h"
@@ -45,3 +47,19 @@ int mmu_load_cartridge(struct cartridge* cart);
  */
 struct cartridge* mmu_eject_cartridge(void);
 // ========== Carts ==========
+
+// ========== Testing ==========
+#ifdef TESTING
+void mmu_testing_set_cartridge_hooks(
+    byte (*cart_read)(struct cartridge* cart, const word addr),
+    void (*cart_write)(struct cartridge* cart, const word addr, const byte value)
+);
+struct cartridge* mmu_testing_get_cart(void);
+byte*             mmu_testing_get_vram(void);
+byte*             mmu_testing_get_wram(const size_t bank);
+byte*             mmu_testing_get_oam(void);
+byte*             mmu_testing_get_io_registers(void);
+byte*             mmu_testing_get_hram(void);
+byte*             mmu_testing_get_reg_ie(void);
+#endif
+// ========== Testing ==========

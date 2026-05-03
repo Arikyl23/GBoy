@@ -9,10 +9,14 @@
 #include <stddef.h>
 
 #include "DEFINES.h"
+#include "memory/bootROM.h"
 #include "memory/hw_registers.h"
 #include "memory/memory_map.h"
 
 LOG_MODULE_SETUP("MMU", CONFIG_MMU_MODULE_LOG_LEVEL);
+
+static byte (*m_cart_read)(struct cartridge* cart, const word addr)             = cartridge_read;
+void (*m_cart_write)(struct cartridge* cart, const word addr, const byte value) = cartridge_write;
 
 static struct cartridge* m_cart                                  = NULL;
 static byte              m_vram[VRAM_BANK_SIZE]                  = {0};
@@ -20,8 +24,9 @@ static byte              m_wram[WRAM_BANK_COUNT][WRAM_BANK_SIZE] = {0};
 static byte              m_oam[OAM_SIZE]                         = {0};
 static byte              m_io_registers[IO_REGISTERS_SIZE]       = {0};
 static byte              m_hram[HRAM_SIZE]                       = {0};
-static byte              m_reg_IE                                = 0;
+static byte              m_reg_ie                                = 0;
 
+// ========== Helper Decls ==========
 static byte mmu_rom_read(const enum bus source, const word addr);
 static void mmu_rom_write(const enum bus source, const word addr, const byte value);
 
@@ -54,8 +59,9 @@ static void mmu_ie_write(const enum bus source, const byte value);
 
 static byte mmu_invalid_read(const enum bus source, const word addr);
 static void mmu_invalid_write(const enum bus source, const word addr);
+// ========== Helper Decls ==========
 
-// ========== API ==========
+// ========== API Defs ==========
 byte mmu_read(const enum bus source, const word addr) {
     if (addr <= ADDR_CART_ROM_END) {
         return mmu_rom_read(source, addr);
@@ -141,14 +147,14 @@ struct cartridge* mmu_eject_cartridge(void) {
     log_debug("Cartridge ejected");
     return rtn;
 }
-// ========== API ==========
+// ========== API Defs ==========
 
+// ========== Helper Defs ==========
 static byte mmu_rom_read(const enum bus source, const word addr) {
     byte value = 0x00;
     // Boot ROM read?
     if (addr <= ADDR_BOOT_ROM_END && mmu_io_read(source, REG_BANK) == 0) {
-        // TODO: Replace with actually boot ROM
-        value = 0x00;
+        value = m_boot_rom[addr - ADDR_BOOT_ROM_START];
         log_debug(
             "Boot ROM Read:\n\tSource: %s\n\tAddr: 0x%.4X\n\tValue: 0x%.2X",
             bus_to_string(source),
@@ -159,7 +165,7 @@ static byte mmu_rom_read(const enum bus source, const word addr) {
     }
 
     // Cartridge ROM read
-    value = cartridge_read(m_cart, addr);
+    value = m_cart_read(m_cart, addr);
     log_debug(
         "Cart ROM Read:\n\tSource: %s\n\tAddr: 0x%.4X\n\tValue: 0x%.2X",
         bus_to_string(source),
@@ -216,7 +222,7 @@ static void mmu_vram_write(const enum bus source, const word addr, const byte va
 }
 
 static byte mmu_cart_ram_read(const enum bus source, const word addr) {
-    byte value = cartridge_read(m_cart, addr);
+    byte value = m_cart_read(m_cart, addr);
     log_debug(
         "Cart RAM Read:\n\tSource: %s\n\tAddr: 0x%.4X\n\tValue: 0x%.2X",
         bus_to_string(source),
@@ -226,8 +232,8 @@ static byte mmu_cart_ram_read(const enum bus source, const word addr) {
     return value;
 }
 static void mmu_cart_ram_write(const enum bus source, const word addr, const byte value) {
-    byte old_value = cartridge_read(m_cart, addr);
-    cartridge_write(m_cart, addr, value);
+    byte old_value = m_cart_read(m_cart, addr);
+    m_cart_write(m_cart, addr, value);
     log_debug(
         "Cart RAM Write:\n\tSource: %s\n\tAddr: 0x%.4X\n\tValue (before | after): 0x%.2X | 0x%.2X",
         bus_to_string(source),
@@ -284,7 +290,8 @@ static void mmu_wram_write(const enum bus source, const word addr, const byte va
 }
 
 static byte mmu_echo_ram_read(const enum bus source, const word addr) {
-    byte value = mmu_wram_read(source, addr);
+    // ECHO RAM address needs to be adjusted for WRAM
+    byte value = mmu_wram_read(source, addr - (ADDR_ECHO_RAM_START - ADDR_WRAM_START));
     log_warn(
         "ECHO RAM Read:\n\tSource: %s\n\tAddr: 0x%.4X\n\tValue: 0x%.2X",
         bus_to_string(source),
@@ -294,8 +301,10 @@ static byte mmu_echo_ram_read(const enum bus source, const word addr) {
     return value;
 }
 static void mmu_echo_ram_write(const enum bus source, const word addr, const byte value) {
-    byte old_value = mmu_wram_read(source, addr);
-    mmu_wram_write(source, addr, value);
+    // ECHO RAM address needs to be adjusted for WRAM
+    word wram_addr = addr - (ADDR_ECHO_RAM_START - ADDR_WRAM_START);
+    byte old_value = mmu_wram_read(source, wram_addr);
+    mmu_wram_write(source, wram_addr, value);
     log_warn(
         "ECHO RAM Write:\n\tSource: %s\n\tAddr: 0x%.4X\n\tValue (before | after): 0x%.2X | 0x%.2X",
         bus_to_string(source),
@@ -433,12 +442,12 @@ static void mmu_hram_write(const enum bus source, const word addr, const byte va
 }
 
 static byte mmu_ie_read(const enum bus source) {
-    log_debug("IE Register Read:\n\tSource: %s\n\tValue: 0x%.2X", bus_to_string(source), m_reg_IE);
-    return m_reg_IE;
+    log_debug("IE Register Read:\n\tSource: %s\n\tValue: 0x%.2X", bus_to_string(source), m_reg_ie);
+    return m_reg_ie;
 }
 static void mmu_ie_write(const enum bus source, const byte value) {
-    byte old_value = m_reg_IE;
-    m_reg_IE       = value;
+    byte old_value = m_reg_ie;
+    m_reg_ie       = value;
     log_debug(
         "IE Register Write:\n\tSource: %s\n\tValue (before | after): 0x%.2X | 0x%.2X",
         bus_to_string(source),
@@ -463,3 +472,24 @@ static void mmu_invalid_write(const enum bus source, const word addr) {
         addr
     );
 }
+// ========== Helper Defs ==========
+
+// ========== Testing API Defs ==========
+#ifdef TESTING
+void mmu_testing_set_cartridge_hooks(
+    byte (*cart_read)(struct cartridge* cart, const word addr),
+    void (*cart_write)(struct cartridge* cart, const word addr, const byte value)
+) {
+    m_cart_read  = (cart_read == NULL) ? cartridge_read : cart_read;
+    m_cart_write = (cart_write == NULL) ? cartridge_write : cart_write;
+    return;
+}
+struct cartridge* mmu_testing_get_cart(void) { return m_cart; }
+byte*             mmu_testing_get_vram(void) { return m_vram; }
+byte*             mmu_testing_get_wram(const size_t bank) { return m_wram[bank]; }
+byte*             mmu_testing_get_oam(void) { return m_oam; }
+byte*             mmu_testing_get_io_registers(void) { return m_io_registers; }
+byte*             mmu_testing_get_hram(void) { return m_hram; }
+byte*             mmu_testing_get_reg_ie(void) { return &m_reg_ie; }
+#endif
+// ========== Testing API Defs ==========

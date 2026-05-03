@@ -62,7 +62,7 @@
 /** @brief Size of a single WRAM (Work RAM) bank. */
 #define WRAM_BANK_SIZE    (ADDR_WRAM_0_END - ADDR_WRAM_0_START + 1)
 /** @brief Defines the number of WRAM banks. */
-#define WRAM_BANK_COUNT   2
+#define WRAM_BANK_COUNT   8
 /** @brief Size of the Object Attribute Memory. */
 #define OAM_SIZE          (ADDR_OAM_END - ADDR_OAM_START + 1)
 /** @brief Size of the I/O Registers RAM */
