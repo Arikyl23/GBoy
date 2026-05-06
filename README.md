@@ -14,6 +14,22 @@ For now, only the base model of the Gameboy will be emulated; however, more may 
 
 Since this is more of a learning project for me. I would like to primarily work on this on my own. Anyone is welcome to pull this code and fork it as they see fit.
 
+## Submodules and Cloning
+
+This project makes use of git submodules to vendor the large SDL libraries. This prevents their large repositories from also being tracked within our repository. This also means that cloning is slightly different than normal:
+
+```sh
+git clone --recurse-submodules <https|ssh>
+```
+
+If you already cloned the project without specifying the above `--recurse-submodules` option. That's okay, you can still get the submodules after the fact by running the following command instead:
+
+```sh
+git submodule update --init --recursive
+```
+
+**Note:** Both of these commands will recursively trace each submodule, fetching their required submodules until the entire source tree is created. This may take a awhile on slow networks.
+
 ## Building
 
 Currently, a CMake build system is in use. It will automatically configure the project to correctly build and link SDL3 and additional libraries. The CMake still leaves a lot to be desired and I still have a lot to learn in regards to it.

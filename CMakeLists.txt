@@ -23,6 +23,8 @@ add_definitions(-DPROJECT_SOURCE_DIR_SIZE=${SOURCE_PATH_SIZE})
 # Add External Vendored Libraries (Require own compilation)
 add_subdirectory(vendored/log.c-master)
 add_subdirectory(vendored/SDL-release-3.4.0 EXCLUDE_FROM_ALL)
+set(SDLTTF_VENDORED ON)
+add_subdirectory(vendored/SDL_ttf-release-3.2.0 EXCLUDE_FROM_ALL)
 
 # ----- Construct GBoy Internal INTERFACE Library -----
 # This creates a virtual library that does not compile any source files
@@ -35,6 +37,7 @@ target_link_libraries(GBoy_Internal
     INTERFACE
         Logging
         SDL3::SDL3
+        SDL3_ttf::SDL3_ttf
 )
 # Force Includes the configuration header (so we dont have to manual include in everywhere)
 target_compile_options(GBoy_Internal
