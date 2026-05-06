@@ -38,7 +38,7 @@ I have written a script to wrap the CMake build system greatly simplifing the bu
 
 ### Buildtools Script
 
-The buildtools script is a power bash script that handles everything related to generating, building, testing, and running GBoy.
+The buildtools script is bash script that handles everything related to generating, building, testing, and running GBoy.
 
 To build GBoy, simply run the following command:
 

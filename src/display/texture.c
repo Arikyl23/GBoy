@@ -7,6 +7,7 @@
 #include <SDL3/SDL.h>
 #include <log.h>
 
+#include "display/texture_internal.h"
 #include "display/window_internal.h"
 
 LOG_MODULE_SETUP("Texture", CONFIG_TEXTURE_MODULE_LOG_LEVEL)
@@ -76,6 +77,9 @@ void texture_destroy(struct texture** p_texture) {
     SDL_free(texture);
     *p_texture = NULL;
 }
+
+int texture_get_width(const struct texture* texture) { return texture->width; }
+int texture_get_height(const struct texture* texture) { return texture->height; }
 
 int texture_update(struct texture* texture, const pixel_t* pixel_data, const size_t count) {
     if (texture == NULL) {
@@ -202,4 +206,26 @@ int texture_draw_region_at(
     }
 
     return 0;
+}
+
+struct texture* texture_create_from_sdl_texture(SDL_Texture* sdl_texture) {
+    if (sdl_texture == NULL) {
+        log_error("Failed to create texture from NULL sdl texture");
+        return NULL;
+    }
+
+    struct texture* rtn = SDL_calloc(sizeof(struct texture), 1);
+    if (rtn == NULL) {
+        LOG_SDL_ERROR("SDL failed to allocate handle for texture.");
+        return NULL;
+    }
+
+    *rtn = (struct texture){
+        .sdl_texture = sdl_texture,
+        .width       = sdl_texture->w,
+        .height      = sdl_texture->h,
+        .size        = sdl_texture->w * sdl_texture->h,
+    };
+
+    return rtn;
 }

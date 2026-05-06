@@ -22,6 +22,9 @@ struct texture* texture_create(
 );
 void texture_destroy(struct texture** p_texture);
 
+int texture_get_width(const struct texture* texture);
+int texture_get_height(const struct texture* texture);
+
 int texture_update(struct texture* texture, const pixel_t* pixel_data, const size_t count);
 
 int texture_draw(struct window* window, const struct texture* texture);
