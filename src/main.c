@@ -4,6 +4,7 @@
 #include <threads.h>
 
 // #include "cpu/cpu.h"
+#include "assets.h"
 #include "display/text.h"
 #include "display/texture.h"
 #include "display/window.h"
@@ -11,10 +12,10 @@
 
 LOG_MODULE_SETUP_DEFAULT("main");
 
-#define FONT_FILEPATH "/usr/local/share/fonts/NerdJetBrainsMono/JetBrainsMonoNerdFont-Regular.ttf"
+#define FONT_FILEPATH "assets/fonts/JetBrainsMono-Regular.ttf"
 
-static bool input_runner_active;
-static bool wait_on_input;
+static volatile bool input_runner_active;
+static volatile bool wait_on_input;
 
 int input_handler(void* arg) {
     while (input_runner_active) {
@@ -28,7 +29,8 @@ int main(void) {
     struct window*  window       = window_create("Main Window", 640, 480, 1);
     struct texture* bkg_texture  = texture_create(window, 640, 480, TEXTURE_TYPE_STREAMING);
     struct texture* text_texture = NULL;
-    struct font*    font         = font_create(FONT_FILEPATH, 48.0f);
+    struct asset    font_file    = assets_get_file(FONT_FILEPATH);
+    struct font*    font         = font_create(font_file.data, font_file.size, 48.0f);
     struct rect     text_box     = {0};
     pixel_t         pixel_data[640 * 480] = {0};
 
@@ -80,5 +82,6 @@ int main(void) {
 
     texture_destroy(&bkg_texture);
     window_destroy(&window);
+    font_destroy(&font);
     return 0;
 }

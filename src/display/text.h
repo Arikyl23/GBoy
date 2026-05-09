@@ -9,7 +9,7 @@
 
 struct font;
 
-struct font* font_create(const char* path, float size);
+struct font* font_create(const char* font_data, const size_t font_data_len, const float font_size);
 void         font_destroy(struct font** p_font);
 
 struct texture* text_render(

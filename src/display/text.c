@@ -4,6 +4,7 @@
  */
 #include "display/text.h"
 
+#include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 #include <log.h>
 
@@ -22,15 +23,21 @@ struct font {
     TTF_Font* sdl_font;
 };
 
-struct font* font_create(const char* path, float size) {
-    struct font* rtn = NULL;
+struct font* font_create(const char* font_data, const size_t font_data_len, const float font_size) {
+    struct font*  rtn        = NULL;
+    SDL_IOStream* filestream = NULL;
+
+    if (font_data == NULL) {
+        log_error("Font data was NULL.");
+        return NULL;
+    }
+    if (font_data_len == 0) {
+        log_error("No font data to load");
+        return NULL;
+    }
 
     if (TTF_Init() == false) {
         LOG_SDL_ERROR("SDL TTF failed to initialize.");
-        return NULL;
-    }
-    if (path == NULL) {
-        log_error("Font filepath was NULL.");
         return NULL;
     }
 
@@ -40,11 +47,15 @@ struct font* font_create(const char* path, float size) {
         goto err_cleanup;
     }
 
-    if (SDL_GetPathInfo(path, NULL) == false) {
-        log_error("Font file not found at %s", path);
+    filestream = SDL_IOFromConstMem(font_data, font_data_len);
+    if (filestream == NULL) {
+        LOG_SDL_ERROR("SDL failed to construct a stream from the font data");
         goto err_cleanup;
     }
-    rtn->sdl_font = TTF_OpenFont(path, size);
+
+    // NOTE: No need to cleanup SDL_IOStream object as TTF_OpenFontIO takes ownership on call.
+    //       Even in the event of this function failing, the IOStream will be cleaned up.
+    rtn->sdl_font = TTF_OpenFontIO(filestream, true, font_size);
     if (rtn->sdl_font == NULL) {
         LOG_SDL_ERROR("SDL failed to open the requested font.");
         goto err_cleanup;
