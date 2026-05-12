@@ -32,6 +32,10 @@
 // ----- CALCULATED DEFINES -----
 // If not set explicitly, these are calculated from above defines.
 
+#ifndef CONFIG_GBOY_MODULE_LOG_LEVEL
+#    define CONFIG_GBOY_MODULE_LOG_LEVEL LOG_DEBUG
+#endif
+
 #ifndef CONFIG_MBC_MODULE_LOG_LEVEL
 #    define CONFIG_MBC_MODULE_LOG_LEVEL CONFIG_DEFAULT_CORE_LOG_LEVEL
 #endif

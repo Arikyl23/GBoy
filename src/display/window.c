@@ -6,6 +6,7 @@
 #include "display/window.h"
 
 #include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
 #include <log.h>
 #include <stdbool.h>
 
@@ -27,10 +28,13 @@ LOG_MODULE_SETUP("WINDOW", CONFIG_WINDOW_MODULE_LOG_LEVEL);
     } while (0);
 
 struct window {
-    SDL_Window*   window;
-    SDL_Renderer* renderer;
-    SDL_WindowID  id;
-    void          (*event_handler)(const struct event* evt);
+    SDL_Window*  window;
+    SDL_WindowID id;
+
+    SDL_Renderer*   renderer;
+    TTF_TextEngine* text_engine;
+
+    void (*event_handler)(const struct event* evt);
 };
 
 static inline bool window_is_app_event(const SDL_Event* evt);
@@ -64,6 +68,12 @@ struct window* window_create(
             &rtn->renderer
         ) == false) {
         LOG_SDL_ERROR("SDL failed to create window and/or it's renderer.");
+        goto err_cleanup;
+    }
+
+    rtn->text_engine = TTF_CreateRendererTextEngine(rtn->renderer);
+    if (rtn->text_engine == NULL) {
+        LOG_SDL_ERROR("Couldn't create window. SDL failed to create TextEngine.");
         goto err_cleanup;
     }
 
@@ -101,6 +111,7 @@ void window_destroy(struct window** p_window) {
     event_deregister_window(window);
 
     // Cleanup resource
+    if (window->text_engine != NULL) { TTF_DestroyRendererTextEngine(window->text_engine); }
     if (window->renderer != NULL) { SDL_DestroyRenderer(window->renderer); }
     if (window->window != NULL) { SDL_DestroyWindow(window->window); }
     SDL_free(window);
@@ -326,6 +337,11 @@ int window_draw_point(struct window* window, float x, float y, colour_t colour) 
 SDL_Renderer* window_get_renderer(const struct window* window) {
     if (window == NULL) { return NULL; }
     return window->renderer;
+}
+
+TTF_TextEngine* window_get_text_engine(const struct window* window) {
+    if (window == NULL) { return NULL; }
+    return window->text_engine;
 }
 
 SDL_WindowID window_get_id(const struct window* window) {

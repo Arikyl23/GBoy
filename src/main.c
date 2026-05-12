@@ -5,83 +5,200 @@
 
 // #include "cpu/cpu.h"
 #include "assets.h"
-#include "display/text.h"
 #include "display/texture.h"
 #include "display/window.h"
 #include "events/event.h"
+#include "gboy.h"
 
-LOG_MODULE_SETUP_DEFAULT("main");
+LOG_MODULE_SETUP("main", LOG_DEBUG);
 
 #define FONT_FILEPATH "assets/fonts/JetBrainsMono-Regular.ttf"
 
-static volatile bool input_runner_active;
-static volatile bool wait_on_input;
+static bool            m_active                      = true;
+static struct window*  m_gboy_window                 = NULL;
+static struct texture* m_gboy_pixel_texture          = NULL;
+static pixel_t         m_pixel_buffer[GBOY_LCD_SIZE] = {0};
 
-int input_handler(void* arg) {
-    while (input_runner_active) {
-        if (getchar() == (int)'a') { wait_on_input = false; }
+static void application_event_handler(const struct event* evt) {
+    switch (evt->type) {
+    case EVENT_APPLICATION:
+        switch (evt->application.type) {
+        case EVENT_APPLICATION_QUIT:
+            log_debug("Application Quit Reqested");
+            m_active = false;
+            return;
+        case EVENT_APPLICATION_TERMINATING:
+            log_debug("Application Terminating");
+            m_active = false;
+            return;
+        case EVENT_APPLICATION_LOW_MEMORY:
+            log_warn("Application has LOW MEMORY");
+            return;
+        default:
+            log_error("Unhandled Application Event");
+            return;
+        };
+    default:
+        log_error("Only application events should be thrown here");
+        return;
+    };
+}
+
+static void gboy_window_handle_button_input(const struct event_input_button* evt) {
+    static size_t cached_clock_speed = 0;
+
+    if (evt->device == DEVICE_KEYBOARD) {
+        if (evt->button == KEYCODE_GRAVE) {
+            // Open Debugger
+            if (evt->down == false || evt->repeat == true) { return; }
+            if (gboy_debugger_is_open() == true) { return; }
+            gboy_debugger_open();
+            return;
+        }
+
+        if (evt->button == KEYCODE_SPACE) {
+            // Play/Pause Emulation
+            if (evt->down == false || evt->repeat == true) { return; }
+            size_t current_clock_speed = gboy_get_clock_speed();
+            if (current_clock_speed == 0) {
+                gboy_set_clock_speed(cached_clock_speed);
+            } else {
+                gboy_set_clock_speed(0);
+                cached_clock_speed = current_clock_speed;
+            }
+            return;
+        }
+
+        if (evt->button == KEYCODE_RIGHT) {
+            // Step once (on down only)
+            if (evt->down == true && evt->repeat == false) { gboy_step(); }
+            return;
+        }
+
+        if (evt->button == KEYCODE_NUMPAD_0) {
+            // Run at 1 step/sec
+            if (evt->down == true && evt->repeat == false) { gboy_set_clock_speed(1); }
+            return;
+        }
+
+        if (evt->button == KEYCODE_NUMPAD_1) {
+            // Run at standard speed
+            if (evt->down == true && evt->repeat == false) {
+                gboy_set_clock_speed(GBOY_DEFAULT_CLOCK_SPEED);
+            }
+            return;
+        }
+
+        if (evt->button == KEYCODE_NUMPAD_2) {
+            // Run at half speed
+            if (evt->down == true && evt->repeat == false) {
+                gboy_set_clock_speed(GBOY_DEFAULT_CLOCK_SPEED / 2);
+            }
+            return;
+        }
+
+        if (evt->button == KEYCODE_NUMPAD_3) {
+            // Run at 1/3 speed
+            if (evt->down == true && evt->repeat == false) {
+                gboy_set_clock_speed(GBOY_DEFAULT_CLOCK_SPEED / 3);
+            }
+            return;
+        }
+
+        if (evt->button == KEYCODE_NUMPAD_4) {
+            // Run at quater speed
+            if (evt->down == true && evt->repeat == false) {
+                gboy_set_clock_speed(GBOY_DEFAULT_CLOCK_SPEED / 4);
+            }
+            return;
+        }
+
+        log_debug("Unhandled Keyboard Input Event");
+        return;
+    } else {
+        log_debug("Unhandled Device Input");
+        return;
+    }
+}
+
+static void gboy_window_handle_input(const struct event_input* evt) {
+    switch (evt->type) {
+    case EVENT_INPUT_BUTTON:
+        gboy_window_handle_button_input(&evt->button);
+        return;
+    case EVENT_INPUT_MOTION:
+        return;
+    default:
+        log_debug("Unhandled Input Event");
+        return;
+    }
+}
+
+static void gboy_window_event_handler(const struct event* evt) {
+    switch (evt->type) {
+    case EVENT_APPLICATION:
+        log_error("Application events should not be thrown by a window");
+        return;
+    case EVENT_INPUT:
+        gboy_window_handle_input(&evt->input);
+        return;
+    case EVENT_WINDOW:
+        switch (evt->window.type) {
+        case EVENT_WINDOW_CLOSE_REQUESTED:
+            log_debug("GBoy window requested to close");
+            m_active = false;
+            return;
+        case EVENT_WINDOW_DESTROYED:
+            log_debug("GBoy window destroyed");
+            return;
+        default:
+            log_debug("Unhandled Window Event");
+            return;
+        }
+    default:
+        log_debug("Unhandled Event");
+        return;
     }
 
-    return 0;
+    return;
+}
+
+static void update_frame(void) {
+    window_clear(m_gboy_window);
+
+    gboy_get_lcd(m_pixel_buffer, GBOY_LCD_SIZE);
+    texture_update(m_gboy_pixel_texture, m_pixel_buffer, GBOY_LCD_SIZE);
+    texture_draw(m_gboy_window, m_gboy_pixel_texture);
+    window_present(m_gboy_window);
 }
 
 int main(void) {
-    struct window*  window       = window_create("Main Window", 640, 480, 1);
-    struct texture* bkg_texture  = texture_create(window, 640, 480, TEXTURE_TYPE_STREAMING);
-    struct texture* text_texture = NULL;
-    struct asset    font_file    = assets_get_file(FONT_FILEPATH);
-    struct font*    font         = font_create(font_file.data, font_file.size, 48.0f);
-    struct rect     text_box     = {0};
-    pixel_t         pixel_data[640 * 480] = {0};
+    m_gboy_window = window_create("GBoy", GBOY_LCD_WIDTH, GBOY_LCD_HEIGHT, 4);
+    m_gboy_pixel_texture =
+        texture_create(m_gboy_window, GBOY_LCD_WIDTH, GBOY_LCD_HEIGHT, TEXTURE_TYPE_STREAMING);
 
-    const colour_t colours[] = {
-        {.r = 255, .g = 0, .b = 0, .a = 255},
-        {.r = 0, .g = 255, .b = 0, .a = 255},
-        {.r = 0, .g = 0, .b = 255, .a = 255},
-        {.r = 255, .g = 255, .b = 255, .a = 255},
-        {.r = 0, .g = 0, .b = 0, .a = 255}
-    };
-    const char text[][16] = {"RED", "GREEN", "BLUE"};
+    // Setup event handlers
+    event_register_application_event_handler(application_event_handler);
+    window_register_event_handler(m_gboy_window, gboy_window_event_handler);
 
-    input_runner_active = true;
-    thrd_t input_thread;
-    if (thrd_create(&input_thread, input_handler, NULL) != thrd_success) {
-        log_error("Failed to spool up input thread");
-        return -1;
+    // Enabled GBoy
+    gboy_debugger_open();
+    gboy_poweron(0);
+    gboy_get_lcd(m_pixel_buffer, GBOY_LCD_SIZE);
+    update_frame();
+
+    // Just loop for now
+    while (m_active == true && m_gboy_window != NULL) {
+        event_poll();
+        update_frame();
+        if (gboy_debugger_is_open() == true) { gboy_debugger_update(); }
     }
 
-    for (int colour = 0; colour < 3; colour++) {
-        for (int i = 0; i < 640 * 480; i++) { pixel_data[i] = colours[colour]; }
-        texture_update(bkg_texture, pixel_data, 640 * 480);
-        texture_destroy(&text_texture);
-        text_texture = text_render(window, font, text[colour], colours[4]);
-        text_box     = (struct rect){
-                .w = texture_get_width(text_texture),
-                .h = texture_get_height(text_texture),
-                .x = (texture_get_width(bkg_texture) - texture_get_width(text_texture)) / 2,
-                .y = (texture_get_height(bkg_texture) - texture_get_height(text_texture)) / 2,
-        };
+    // Cleanup
+    if (gboy_debugger_is_open() == true) { gboy_debugger_close(); };
+    gboy_poweroff();
+    texture_destroy(&m_gboy_pixel_texture);
+    window_destroy(&m_gboy_window);
 
-        wait_on_input = true;
-        while (wait_on_input) {
-            // Frame Update
-            window_clear(window);
-            texture_draw(window, bkg_texture);
-            window_draw_rect_filled(window, text_box, colours[3]);
-            window_draw_rect(window, text_box, colours[4]);
-            texture_draw_at(window, text_texture, &text_box);
-            window_present(window);
-
-            // Poll for events
-            event_poll();
-        }
-    }
-
-    input_runner_active = false;
-    thrd_join(input_thread, NULL);
-
-    texture_destroy(&bkg_texture);
-    window_destroy(&window);
-    font_destroy(&font);
     return 0;
 }

@@ -24,9 +24,10 @@ struct window_inst {
     SDL_WindowID   id;
     struct window* window;
 };
-static struct window_inst m_registered_inst[EVENT_MAX_REGISTERED_WINDOWS] = {0};
-static size_t             m_registered_windows                            = 0;
-static void               (*m_application_event_handler)(const struct event* evt);
+
+static struct window_inst m_registered_inst[EVENT_MAX_REGISTERED_WINDOWS]         = {0};
+static size_t             m_registered_windows                                    = 0;
+static void               (*m_application_event_handler)(const struct event* evt) = NULL;
 
 static SDL_WindowID   event_get_evt_window_id(const SDL_Event* evt);
 static struct window* event_find_window_by_id(const SDL_WindowID id);
@@ -34,7 +35,7 @@ static struct window* event_find_window_by_id(const SDL_WindowID id);
 void event_register_application_event_handler(
     void (*application_event_handler)(const struct event* evt)
 ) {
-    if (application_event_handler != NULL) { log_warn("Application event handler overriden"); }
+    if (m_application_event_handler != NULL) { log_warn("Application event handler overriden"); }
     m_application_event_handler = application_event_handler;
 }
 

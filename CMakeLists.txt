@@ -44,6 +44,7 @@ add_subdirectory(src)
 # Add the libraries the source depends on
 target_link_libraries(GBoy_Internal
     INTERFACE
+        GBoy::Assets
         Logging
         SDL3::SDL3
         SDL3_ttf::SDL3_ttf
@@ -62,8 +63,12 @@ add_library(GBoy::Internal::Prod ALIAS GBoy_Internal_Prod)
 # Brings in all dependencies but hides them from further propagation
 # (This is required else INTERFACE library go burr)
 target_link_libraries(GBoy_Internal_Prod PRIVATE GBoy::Internal)
-# The Logging Library should persist past this target
-target_link_libraries(GBoy_Internal_Prod PUBLIC Logging)
+# The Assets and Logging Library should persist past this target
+target_link_libraries(GBoy_Internal_Prod
+PUBLIC
+    GBoy::Assets
+    Logging
+)
 # The /src include directory should persist past this target
 target_include_directories(GBoy_Internal_Prod PUBLIC "${CMAKE_SOURCE_DIR}/src")
 
@@ -86,15 +91,8 @@ target_include_directories(GBoy_Internal_Test
 )
 
 # Setup GBoy Executable (Simple Wrapper for lib_GBoy)
-add_executable(GBoy 
-    src/main.c
-    src/assets.cpp
-)
-target_link_libraries(GBoy
-PRIVATE
-    GBoy::Internal::Prod
-    GBoy::Assets
-)
+add_executable(GBoy src/main.c)
+target_link_libraries(GBoy PRIVATE GBoy::Internal::Prod)
 
 # ----- Testing -----
 enable_testing()
