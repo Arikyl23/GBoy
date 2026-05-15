@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28.3)
-project(GBoy LANGUAGES C VERSION "0.1.0")
+project(GBoy LANGUAGES C CXX VERSION "0.1.0")
 
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 if(ENABLE_ASAN)
@@ -23,18 +23,31 @@ add_definitions(-DPROJECT_SOURCE_DIR_SIZE=${SOURCE_PATH_SIZE})
 # Add External Vendored Libraries (Require own compilation)
 add_subdirectory(vendored/log.c-master)
 add_subdirectory(vendored/SDL-release-3.4.0 EXCLUDE_FROM_ALL)
+set(SDLTTF_VENDORED ON)
+add_subdirectory(vendored/SDL_ttf-release-3.2.0 EXCLUDE_FROM_ALL)
+
+# ----- Construct GBoy Asset Library -----
+include(CMakeRC.cmake)
+cmrc_add_resource_library(Assets
+    NAMESPACE GBoy
+    ALIAS GBoy::Assets
+    assets/fonts/JetBrainsMono-Regular.ttf
+)
 
 # ----- Construct GBoy Internal INTERFACE Library -----
 # This creates a virtual library that does not compile any source files
 add_library(GBoy_Internal INTERFACE)
+add_library(GBoy::Internal ALIAS GBoy_Internal)
 # All source/headers are in /src
 target_include_directories(GBoy_Internal INTERFACE "${CMAKE_SOURCE_DIR}/src")
 add_subdirectory(src)
 # Add the libraries the source depends on
 target_link_libraries(GBoy_Internal
     INTERFACE
+        GBoy::Assets
         Logging
         SDL3::SDL3
+        SDL3_ttf::SDL3_ttf
 )
 # Force Includes the configuration header (so we dont have to manual include in everywhere)
 target_compile_options(GBoy_Internal
@@ -46,20 +59,26 @@ target_compile_options(GBoy_Internal
 # ----- Construct GBoy Internal Production Library -----
 # This creates a static library (compiled and linked)
 add_library(GBoy_Internal_Prod STATIC)
+add_library(GBoy::Internal::Prod ALIAS GBoy_Internal_Prod)
 # Brings in all dependencies but hides them from further propagation
 # (This is required else INTERFACE library go burr)
-target_link_libraries(GBoy_Internal_Prod PRIVATE GBoy_Internal)
-# The Logging Library should persist past this target
-target_link_libraries(GBoy_Internal_Prod PUBLIC Logging)
+target_link_libraries(GBoy_Internal_Prod PRIVATE GBoy::Internal)
+# The Assets and Logging Library should persist past this target
+target_link_libraries(GBoy_Internal_Prod
+PUBLIC
+    GBoy::Assets
+    Logging
+)
 # The /src include directory should persist past this target
 target_include_directories(GBoy_Internal_Prod PUBLIC "${CMAKE_SOURCE_DIR}/src")
 
 # ----- Construct GBoy Internal Testing Library -----
 # This creates a static library (compiled and linked)
 add_library(GBoy_Internal_Test STATIC)
+add_library(GBoy::Internal::Test ALIAS GBoy_Internal_Test)
 # Brings in all dependencies but hides them from further propagation
 # (This is required else INTERFACE library go burr)
-target_link_libraries(GBoy_Internal_Test PRIVATE GBoy_Internal)
+target_link_libraries(GBoy_Internal_Test PRIVATE GBoy::Internal)
 # The Logging Library should persist past this target
 target_link_libraries(GBoy_Internal_Test PUBLIC Logging)
 # Addes a #define TESTING to this target and all further targets
@@ -73,7 +92,7 @@ target_include_directories(GBoy_Internal_Test
 
 # Setup GBoy Executable (Simple Wrapper for lib_GBoy)
 add_executable(GBoy src/main.c)
-target_link_libraries(GBoy PRIVATE GBoy_Internal_Prod)
+target_link_libraries(GBoy PRIVATE GBoy::Internal::Prod)
 
 # ----- Testing -----
 enable_testing()

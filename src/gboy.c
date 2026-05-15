@@ -1,0 +1,873 @@
+/**
+ * @file gboy.c
+ * @brief Implementation for GBoy.
+ */
+#include "gboy.h"
+
+#include <SDL3/SDL.h>
+#include <assert.h>
+#include <log.h>
+
+#include "DEFINES.h"
+#include "assets.h"
+#include "display/textbox.h"
+#include "display/window.h"
+
+LOG_MODULE_SETUP("GBoy", CONFIG_GBOY_MODULE_LOG_LEVEL);
+
+#define FONT_FILEPATH "assets/fonts/JetBrainsMono-Regular.ttf"
+
+#define GBOY_IDLE_SLEEP_MS 500
+
+#define DEBUGGER_WIDTH             620
+#define DEBUGGER_HEIGHT            480
+#define DEBUGGER_MODE_COUNT        2
+#define DEBUGGER_MODE_FONT_SIZE    36
+#define DEBUGGER_TEXT_FONT_SIZE    24
+#define DEBUGGER_TEXT_COLOUR       ((colour_t){255, 255, 255, 255})
+#define DEBUGGER_BKG_COLOUR        ((colour_t){35, 35, 40, 255})
+#define DEBUGGER_UNSELECTED_COLOUR ((colour_t){130, 130, 130, 255})
+#define DEBUGGER_SELECTED_COLOUR   ((colour_t){180, 180, 180, 255})
+#define DEBUGGER_OUTLINE_COLOUR    ((colour_t){100, 100, 100, 255})
+#define DEBUGGER_TEXTBOX_COUNT     16
+#define DEBUGGER_BAR_HEIGHT        50
+#define DEBUGGER_BAR_BOX_WIDTH     (DEBUGGER_WIDTH / DEBUGGER_MODE_COUNT)
+#define DEBUGGER_SLOT_COUNT        20
+#define DEBUGGER_SLOT_STRING_LEN   16
+
+#define LOG_SDL_ERROR(msg)                                                                         \
+    do {                                                                                           \
+        log_error(msg "\n\tReason: %s", SDL_GetError());                                           \
+        SDL_ClearError();                                                                          \
+    } while (false);
+
+static struct {
+    // Control data
+    SDL_RWLock* control_rw_lock;
+    bool        running;
+    size_t      clock_speed;
+
+    // Emulation Thread Data
+    SDL_Thread*    emulation_thread;
+    SDL_Semaphore* emulation_paused_sem;
+
+    // LCD Data
+    SDL_RWLock* lcd_rw_lock;
+    pixel_t     lcd[GBOY_LCD_SIZE];
+} gboy = {0};
+
+enum debug_slot_type {
+    SLOT_BYTE,
+    SLOT_WORD,
+    SLOT_BOOL,
+    SLOT_STRING
+};
+
+struct debug_slot {
+    bool                 dirty;
+    enum debug_slot_type type;
+    union {
+        byte byte;
+        struct {
+            word value;
+            bool has_indirect;
+            byte indirect;
+        } word;
+        bool boolean;
+        char str[DEBUGGER_SLOT_STRING_LEN];
+    };
+};
+
+enum debug_mode {
+    DEBUG_CPU = 0,
+    DEBUG_PPU = 1
+};
+
+static struct {
+    struct window*  window;
+    struct textbox* mode_bar_labels[DEBUGGER_MODE_COUNT];
+    struct textbox* textboxes[DEBUGGER_TEXTBOX_COUNT];
+    size_t          static_textbox_count;
+
+    SDL_RWLock*     mode_rw_lock;
+    enum debug_mode mode;
+    bool            mode_dirty;
+
+    SDL_RWLock*       slot_values_rw_lock;
+    struct debug_slot slot_values[DEBUGGER_SLOT_COUNT];
+} debugger = {0};
+
+static int  emulation_loop(void* arg);
+static void m_cycle(void);
+static void t_cycle(void);
+
+static void debugger_update_slot_values(void);
+static void debugger_event_handler(const struct event* evt);
+static void debugger_window_event(const struct event_window* evt);
+static void debugger_input_event(const struct event_input* evt);
+static void debugger_button_input_event(const struct event_input_button* evt);
+
+bool gboy_poweron(const size_t clock_speed) {
+    if (gboy.control_rw_lock != NULL) {
+        log_warn("GBoy is already running. Call gboy_poweroff() first.");
+        return false;
+    }
+
+    // Setup RW locks
+    gboy.control_rw_lock = SDL_CreateRWLock();
+    if (gboy.control_rw_lock == NULL) {
+        LOG_SDL_ERROR("Could not power on GBoy. SDL failed to create RWLock.");
+        goto err_cleanup;
+    }
+    gboy.lcd_rw_lock = SDL_CreateRWLock();
+    if (gboy.control_rw_lock == NULL) {
+        LOG_SDL_ERROR("Could not power on GBoy. SDL failed to create RWLock.");
+        goto err_cleanup;
+    }
+
+    // Setup properties
+    gboy.running     = true;
+    gboy.clock_speed = clock_speed;
+    for (size_t i = 0; i < GBOY_LCD_SIZE; i++) { gboy.lcd[i] = (pixel_t){0, 0, 0, 255}; }
+
+    // Setup Thread
+    gboy.emulation_paused_sem = SDL_CreateSemaphore(0);
+    if (gboy.emulation_paused_sem == NULL) {
+        LOG_SDL_ERROR("Could not power on GBoy. SDL failed to create emulation semaphore.");
+        goto err_cleanup;
+    }
+    //! This must always be the last thing to setup incase our current thread gets preempted
+    //! Must ensure GBoy is in a fully initialized state
+    gboy.emulation_thread = SDL_CreateThread(emulation_loop, "gboy::emulation", NULL);
+    if (gboy.emulation_thread == NULL) {
+        LOG_SDL_ERROR("Could not power on GBoy. SDL failed to create emulation thread.");
+        goto err_cleanup;
+    }
+
+    return true;
+
+err_cleanup:
+    gboy.running = false;
+    if (gboy.control_rw_lock != NULL) {
+        SDL_DestroyRWLock(gboy.control_rw_lock);
+        gboy.control_rw_lock = NULL;
+    }
+    if (gboy.lcd_rw_lock != NULL) {
+        SDL_DestroyRWLock(gboy.lcd_rw_lock);
+        gboy.lcd_rw_lock = NULL;
+    }
+    if (gboy.emulation_paused_sem != NULL) {
+        SDL_DestroySemaphore(gboy.emulation_paused_sem);
+        gboy.emulation_paused_sem = NULL;
+    }
+    // Thread Must be last thing created thus if it fails it was never created in the first place
+    return false;
+}
+
+void gboy_poweroff(void) {
+    if (gboy.control_rw_lock == NULL) {
+        log_warn("Gboy is already powered off.");
+        return;
+    }
+
+    // Stop thread
+    SDL_LockRWLockForWriting(gboy.control_rw_lock);
+    gboy.running     = false;
+    // Ensure thread can run in the event it is currently paused
+    gboy.clock_speed = 1;
+    SDL_SignalSemaphore(gboy.emulation_paused_sem);
+    SDL_UnlockRWLock(gboy.control_rw_lock);
+    SDL_WaitThread(gboy.emulation_thread, NULL);
+    //* Note: Safe to NULL the thread object after it has exited as SDL will have already cleaned it
+    //*       up
+    gboy.emulation_thread = NULL;
+
+    // Destroy remaing GBoy state
+    SDL_DestroyRWLock(gboy.control_rw_lock);
+    gboy.control_rw_lock = NULL;
+    SDL_DestroyRWLock(gboy.lcd_rw_lock);
+    gboy.lcd_rw_lock = NULL;
+    SDL_DestroySemaphore(gboy.emulation_paused_sem);
+    gboy.emulation_paused_sem = NULL;
+    gboy.clock_speed          = 0;
+}
+
+bool gboy_step(void) {
+    if (gboy.control_rw_lock == NULL) {
+        log_warn("GBoy is powered off. Cannot step the emulation.");
+        return false;
+    }
+
+    SDL_LockRWLockForReading(gboy.control_rw_lock);
+    if (gboy.clock_speed != 0) {
+        SDL_UnlockRWLock(gboy.control_rw_lock);
+        log_warn("GBoy clock speed is non-zero. Cannot step the emulation.");
+        return false;
+    }
+    SDL_UnlockRWLock(gboy.control_rw_lock);
+
+    SDL_SignalSemaphore(gboy.emulation_paused_sem);
+
+    return true;
+}
+
+bool gboy_set_clock_speed(const size_t clock_speed) {
+    if (gboy.control_rw_lock == NULL) {
+        log_warn("GBoy is powered off. Cannot step the emulation.");
+        return false;
+    }
+
+    SDL_LockRWLockForWriting(gboy.control_rw_lock);
+    gboy.clock_speed = clock_speed;
+
+    if (clock_speed == 0) {
+        // User is attempting to pause the emulated, ensure pause semaphore is empty by draining it
+        while (SDL_TryWaitSemaphore(gboy.emulation_paused_sem));
+    } else if (SDL_GetSemaphoreValue(gboy.emulation_paused_sem) == 0) {
+        // User is either unpausing or change emulation speed. Ensure pause is exited (since we
+        // drain on pause, this is safe).
+        SDL_SignalSemaphore(gboy.emulation_paused_sem);
+    }
+    SDL_UnlockRWLock(gboy.control_rw_lock);
+
+    return true;
+}
+
+size_t gboy_get_clock_speed(void) {
+    if (gboy.control_rw_lock == NULL) {
+        log_warn("GBoy is powered off. Returning clock speed of 0");
+        return 0;
+    }
+
+    SDL_LockRWLockForReading(gboy.control_rw_lock);
+    size_t clock_speed = gboy.clock_speed;
+    SDL_UnlockRWLock(gboy.control_rw_lock);
+
+    return clock_speed;
+}
+
+bool gboy_get_lcd(pixel_t* pixel_buffer, const size_t size) {
+    if (pixel_buffer == NULL) {
+        log_error("No pixel buffer to work on.");
+        return false;
+    }
+    if (size != GBOY_LCD_SIZE) {
+        log_error(
+            "Invalid sized pixel buffer. Buffer must be %zux%zu or %zu",
+            GBOY_LCD_WIDTH,
+            GBOY_LCD_HEIGHT,
+            GBOY_LCD_SIZE
+        );
+        return false;
+    }
+
+    if (gboy.control_rw_lock == NULL) {
+        log_debug("GBoy is powered off. Returning blank (black) frame");
+        for (size_t i = 0; i < GBOY_LCD_SIZE; i++) { pixel_buffer[i] = (pixel_t){0, 0, 0, 255}; }
+        return true;
+    } else {
+        SDL_LockRWLockForReading(gboy.lcd_rw_lock);
+        SDL_memcpy(pixel_buffer, gboy.lcd, sizeof(gboy.lcd));
+        SDL_UnlockRWLock(gboy.lcd_rw_lock);
+        return true;
+    }
+}
+
+bool gboy_debugger_is_open(void) { return debugger.window != NULL; }
+
+void gboy_debugger_open(void) {
+    if (debugger.window != NULL) {
+        log_warn("Debugger is already open");
+        return;
+    }
+
+    debugger.mode       = DEBUG_CPU;
+    debugger.mode_dirty = true;
+
+    debugger.mode_rw_lock        = SDL_CreateRWLock();
+    debugger.slot_values_rw_lock = SDL_CreateRWLock();
+    if (debugger.mode_rw_lock == NULL || debugger.slot_values_rw_lock == NULL) {
+        LOG_SDL_ERROR("Couldn't open debugger. SDL failed to create RWLock");
+        goto err_cleanup;
+    }
+
+    debugger.window = window_create("Debugger", DEBUGGER_WIDTH, DEBUGGER_HEIGHT, 1);
+    if (debugger.window == NULL) {
+        log_error("Couldn't open debugger. Failed to create debug window");
+        goto err_cleanup;
+    }
+
+    struct asset font_file = assets_get_file(FONT_FILEPATH);
+
+    const char* box_labels[DEBUGGER_MODE_COUNT] = {"CPU", "PPU"};
+    for (int i = 0; i < DEBUGGER_MODE_COUNT; i++) {
+        debugger.mode_bar_labels[i] = textbox_create(
+            debugger.window,
+            &font_file,
+            DEBUGGER_MODE_FONT_SIZE,
+            DEBUGGER_TEXT_COLOUR,
+            box_labels[i]
+        );
+        if (debugger.mode_bar_labels[i] == NULL) {
+            log_error("Couldn't open debugger. Failed to create labels");
+            goto err_cleanup;
+        }
+    }
+
+    for (int i = 0; i < DEBUGGER_TEXTBOX_COUNT; i++) {
+        debugger.textboxes[i] = textbox_create(
+            debugger.window,
+            &font_file,
+            DEBUGGER_TEXT_FONT_SIZE,
+            DEBUGGER_TEXT_COLOUR,
+            ""
+        );
+        if (debugger.textboxes[i] == NULL) {
+            log_error("Failed to create content textboxes.");
+            goto err_cleanup;
+        }
+    }
+
+    window_register_event_handler(debugger.window, debugger_event_handler);
+
+    return;
+
+err_cleanup:
+    for (int i = 0; i < DEBUGGER_MODE_COUNT; i++) {
+        if (debugger.mode_bar_labels[i] != NULL) { textbox_destroy(&debugger.mode_bar_labels[i]); }
+    }
+    for (int i = 0; i < DEBUGGER_TEXTBOX_COUNT; i++) {
+        if (debugger.textboxes[i] != NULL) { textbox_destroy(&debugger.textboxes[i]); }
+    }
+    if (debugger.window != NULL) { window_destroy(&debugger.window); }
+    if (debugger.slot_values_rw_lock != NULL) {
+        SDL_DestroyRWLock(debugger.slot_values_rw_lock);
+        debugger.slot_values_rw_lock = NULL;
+    }
+    if (debugger.mode_rw_lock != NULL) {
+        SDL_DestroyRWLock(debugger.mode_rw_lock);
+        debugger.mode_rw_lock = NULL;
+    }
+    return;
+}
+
+void gboy_debugger_close(void) {
+    for (int i = 0; i < DEBUGGER_MODE_COUNT; i++) {
+        if (debugger.mode_bar_labels[i] != NULL) { textbox_destroy(&debugger.mode_bar_labels[i]); }
+    }
+    for (int i = 0; i < DEBUGGER_TEXTBOX_COUNT; i++) {
+        if (debugger.textboxes[i] != NULL) { textbox_destroy(&debugger.textboxes[i]); }
+    }
+    if (debugger.window != NULL) { window_destroy(&debugger.window); }
+    if (debugger.slot_values_rw_lock != NULL) {
+        SDL_DestroyRWLock(debugger.slot_values_rw_lock);
+        debugger.slot_values_rw_lock = NULL;
+    }
+    if (debugger.mode_rw_lock != NULL) {
+        SDL_DestroyRWLock(debugger.mode_rw_lock);
+        debugger.mode_rw_lock = NULL;
+    }
+
+    return;
+}
+
+void gboy_debugger_update(void) {
+    const struct rect content_box = {
+        .x = 0,
+        .y = DEBUGGER_BAR_HEIGHT,
+        .w = DEBUGGER_WIDTH,
+        .h = DEBUGGER_HEIGHT - DEBUGGER_BAR_HEIGHT
+    };
+
+    // Fetch mode without potentially blocking other threads
+    SDL_LockRWLockForReading(debugger.mode_rw_lock);
+    enum debug_mode mode       = debugger.mode;
+    bool            mode_dirty = debugger.mode_dirty;
+    SDL_UnlockRWLock(debugger.mode_rw_lock);
+
+    // Only redraw bar if the mode is dirty
+    if (mode_dirty == true) {
+        // Full window needs to be redrawn
+        window_fill(debugger.window, DEBUGGER_BKG_COLOUR);
+
+        // Draw top bar
+        struct rect box = {
+            .x = 0,
+            .y = 0,
+            .w = DEBUGGER_BAR_BOX_WIDTH,
+            .h = DEBUGGER_BAR_HEIGHT,
+        };
+        int         selected_box = (int)mode;
+        struct rect box_outline  = {0};
+        struct rect box_fill     = {0};
+        for (int i = 0; i < DEBUGGER_MODE_COUNT; i++) {
+            box_outline  = box;
+            box_fill     = box;
+            box_fill.h  -= 6;
+            box_fill.w  -= 6;
+            box_fill.x  += 3;
+            box_fill.y  += 3;
+
+            // Draw Box Rect
+            window_draw_rect_filled(debugger.window, box_outline, DEBUGGER_OUTLINE_COLOUR);
+            window_draw_rect_filled(
+                debugger.window,
+                box_fill,
+                (i == selected_box) ? DEBUGGER_SELECTED_COLOUR : DEBUGGER_UNSELECTED_COLOUR
+            );
+
+            // Draw Box Label
+            float label_width  = 0;
+            float label_height = 0;
+            textbox_get_size(debugger.mode_bar_labels[i], &label_width, &label_height);
+            float text_x = box.x + (DEBUGGER_BAR_BOX_WIDTH - label_width) / 2;
+            float text_y = (DEBUGGER_BAR_HEIGHT - label_height) / 2;
+            textbox_draw(debugger.mode_bar_labels[i], text_x, text_y);
+
+            // Move to next box
+            box.x += DEBUGGER_BAR_BOX_WIDTH;
+        }
+
+        // Set "static" textboxes for new mode
+        switch (mode) {
+        case DEBUG_CPU:
+            textbox_set_text(debugger.textboxes[0], "CORE");
+            textbox_set_text(debugger.textboxes[1], "16-BIT REGISTERS");
+            textbox_set_text(debugger.textboxes[2], "8-BIT REGISTERS");
+            textbox_set_text(debugger.textboxes[3], "FLAGS");
+            debugger.static_textbox_count = 4;
+            break;
+
+        case DEBUG_PPU:
+        default:
+            log_warn("Static draw for this Mode is not implemented");
+            break;
+        }
+
+        // Clear dirty flag
+        SDL_LockRWLockForWriting(debugger.mode_rw_lock);
+        debugger.mode_dirty = false;
+        SDL_UnlockRWLock(debugger.mode_rw_lock);
+    } else {
+        // Only content has to be redrawn
+        window_draw_rect_filled(debugger.window, content_box, DEBUGGER_BKG_COLOUR);
+    }
+
+    // Draw mode content
+    const size_t      textbox_text_capacity = 256;
+    char              textbox_text_buf[textbox_text_capacity];
+    struct debug_slot slots[DEBUGGER_SLOT_COUNT] = {0};
+    struct rect       rect                       = {0};
+    switch (mode) {
+    // Draw CPU debug screen
+    case DEBUG_CPU:
+        // Content Window:
+        //
+        //           Control             |        Flags
+        // PC: 0x0000 -> 0x00            |
+        // SP: 0x0000 -> 0x00 (000)      | Zero........(z): [x]
+        // ------------------------------| Subtraction.(n): [x]
+        //            16-bit             | Half Carry..(h): [x]
+        // BC: 0x0000 (000) -> 0x00 (000)| Carry.......(c): [x]
+        // DE: 0x0000 (000) -> 0x00 (000)|
+        // HL: 0x0000 (000) -> 0x00 (000)|
+        // AF: 0x0000 (000) -> 0x00 (000)|
+        // ------------------------------|
+        //             8-bit             |
+        //  B: 0x00   (000) C: 0x00 (000)|
+        //  D: 0x00   (000) E: 0x00 (000)|
+        //  H: 0x00   (000) L: 0x00 (000)|
+        //  A: 0x00   (000) F: 0x00 (000)|
+
+        const char* const textbox_fmts[] = {
+            "PC: 0x%1$.4X -> 0x%2$.2X\nSP: 0x%3$.4X -> 0x%4$.2X (%4$03u)",
+            "BC: 0x%1$.4X (%1$03u) -> 0x%2$.2X (%2$03u)\n"
+            "DE: 0x%3$.4X (%3$03u) -> 0x%4$.2X (%4$03u)\n"
+            "HL: 0x%5$.4X (%5$03u) -> 0x%6$.2X (%6$03u)\n"
+            "AF: 0x%7$.4X (%7$03u) -> 0x%8$.2X (%8$03u)",
+            " B: 0x%1$.2X (%1$03u) C: 0x%2$.2X (%2$03u)\n"
+            " D: 0x%3$.2X (%3$03u) E: 0x%4$.2X (%4$03u)\n"
+            " H: 0x%5$.2X (%5$03u) L: 0x%6$.2X (%6$03u)\n"
+            " A: 0x%7$.2X (%7$03u) F: 0x%8$.2X (%8$03u)",
+            "Z: [%1$c]\n"
+            "N: [%2$c]\n"
+            "H: [%3$c]\n"
+            "C: [%4$c]"
+        };
+
+        // Make a copy of the slots to prevent halting the emulation loop
+        const size_t cpu_slots_in_use = 18;
+        SDL_LockRWLockForWriting(debugger.slot_values_rw_lock);
+        SDL_memcpy(slots, debugger.slot_values, sizeof(struct debug_slot) * cpu_slots_in_use);
+        for (int i = 0; i < cpu_slots_in_use; i++) {
+            // Slots 0-5 should be 16-bit registers with indirect (WORDs)
+            if (i < 6) {
+                if (debugger.slot_values[i].type != SLOT_WORD ||
+                    debugger.slot_values[i].word.has_indirect == false) {
+                    // log_warn("Debugger: Expected a WORD with INDIRECT in SLOT %i", i);
+                }
+                // Slots 6-13 should be 8-bit registers (BYTEs)
+            } else if (i < 14) {
+                if (debugger.slot_values[i].type != SLOT_BYTE) {
+                    // log_warn("Debugger: Expected a BYTE in SLOT %i, i");
+                }
+                // Slots 14-17 should be booleans
+            } else if (i < 18) {
+                if (debugger.slot_values[i].type != SLOT_BOOL) {
+                    // log_warn("Debugger: Expected a BOOL in SLOT %i, i");
+                }
+            }
+            debugger.slot_values[i].dirty = false;
+        }
+        SDL_UnlockRWLock(debugger.slot_values_rw_lock);
+
+        // Update Core section text if any dependant slots [0-1] are dirty (or if mode was dirty)
+        if (mode_dirty == true || slots[0].dirty == true || slots[1].dirty == true) {
+            int required_length = SDL_snprintf(
+                textbox_text_buf,
+                textbox_text_capacity,
+                textbox_fmts[0],
+                slots[0].word.value,
+                slots[0].word.indirect,
+                slots[1].word.value,
+                slots[1].word.indirect
+            );
+            if (required_length >= textbox_text_capacity) {
+                log_error("Debugger: Attempted to format full slot line but overran the buffer. "
+                          "Slot line was truncated.");
+            }
+            textbox_set_text(
+                debugger.textboxes[debugger.static_textbox_count + 0],
+                textbox_text_buf
+            );
+        }
+
+        // Update 16-bit register section text if any dependant slots [2-5] are dirty (or if mode
+        // was dirty)
+        if (mode_dirty == true || slots[2].dirty == true || slots[3].dirty == true ||
+            slots[4].dirty == true || slots[5].dirty == true) {
+            int required_length = SDL_snprintf(
+                textbox_text_buf,
+                textbox_text_capacity,
+                textbox_fmts[1],
+                slots[2].word.value,
+                slots[2].word.indirect,
+                slots[3].word.value,
+                slots[3].word.indirect,
+                slots[4].word.value,
+                slots[4].word.indirect,
+                slots[5].word.value,
+                slots[5].word.indirect
+            );
+            if (required_length >= textbox_text_capacity) {
+                log_error("Debugger: Attempted to format full slot line but overran the buffer. "
+                          "Slot line was truncated.");
+            }
+            textbox_set_text(
+                debugger.textboxes[debugger.static_textbox_count + 1],
+                textbox_text_buf
+            );
+        }
+
+        // Update 8-bit register section text if any dependant slots [6-13] are dirty (or if mode
+        // was dirty)
+        if (mode_dirty == true || slots[6].dirty == true || slots[7].dirty == true ||
+            slots[8].dirty == true || slots[9].dirty == true || slots[10].dirty == true ||
+            slots[11].dirty == true || slots[12].dirty == true || slots[13].dirty == true) {
+            int required_length = SDL_snprintf(
+                textbox_text_buf,
+                textbox_text_capacity,
+                textbox_fmts[2],
+                slots[6].byte,
+                slots[7].byte,
+                slots[8].byte,
+                slots[9].byte,
+                slots[10].byte,
+                slots[11].byte,
+                slots[12].byte,
+                slots[13].byte
+            );
+            if (required_length >= textbox_text_capacity) {
+                log_error("Debugger: Attempted to format full slot line but overran the buffer. "
+                          "Slot line was truncated.");
+            }
+            textbox_set_text(
+                debugger.textboxes[debugger.static_textbox_count + 2],
+                textbox_text_buf
+            );
+        }
+
+        // Update flags section text if any dependant slots [14-17] are dirty (or if mode was dirty)
+        if (mode_dirty == true || slots[14].dirty == true || slots[15].dirty == true ||
+            slots[16].dirty == true || slots[17].dirty == true) {
+            int required_length = SDL_snprintf(
+                textbox_text_buf,
+                textbox_text_capacity,
+                textbox_fmts[3],
+                (slots[14].boolean == true) ? 'x' : ' ',
+                (slots[15].boolean == true) ? 'x' : ' ',
+                (slots[16].boolean == true) ? 'x' : ' ',
+                (slots[17].boolean == true) ? 'x' : ' '
+            );
+            if (required_length >= textbox_text_capacity) {
+                log_error("Debugger: Attempted to format full slot line but overran the buffer. "
+                          "Slot line was truncated.");
+            }
+            textbox_set_text(
+                debugger.textboxes[debugger.static_textbox_count + 3],
+                textbox_text_buf
+            );
+        }
+
+        const float indent            = 5;
+        const float divider_thickness = 5;
+        float       x                 = content_box.x;
+        float       y                 = content_box.y;
+        float       section_width     = 0;
+        float       section_height    = 0;
+        float       title_width       = 0;
+        float       title_height      = 0;
+        struct rect rect              = {0};
+
+        // Section width should be set to the largest section of the first 3
+        for (int i = 0; i < 3; i++) {
+            float temp_width = 0;
+            textbox_get_size(debugger.textboxes[i], &temp_width, NULL);
+            temp_width    += 2 * indent;
+            section_width  = (temp_width > section_width) ? temp_width : section_width;
+            textbox_get_size(
+                debugger.textboxes[debugger.static_textbox_count + i],
+                &temp_width,
+                NULL
+            );
+            temp_width    += 2 * indent;
+            section_width  = (temp_width > section_width) ? temp_width : section_width;
+        }
+
+        // Draw Left size content (3 sections)
+        for (int i = 0; i < 3; i++) {
+            // Get section dimensions
+            textbox_get_size(debugger.textboxes[i], &title_width, &title_height);
+            textbox_get_size(
+                debugger.textboxes[debugger.static_textbox_count + i],
+                NULL, // Ignore actual section width
+                &section_height
+            );
+
+            // Draw section divider (5 pixel line)
+            rect = (struct rect){
+                .x = content_box.x, // start at far left of content box
+                .y = y,             // start after previous section
+                .w = section_width, // draw across section
+                .h = divider_thickness,
+            };
+            window_draw_rect_filled(debugger.window, rect, DEBUGGER_OUTLINE_COLOUR);
+
+            // Label
+            x  = content_box.x + (section_width - title_width) / 2; // Center on line
+            y += divider_thickness;                                 // Push down by divider
+            textbox_draw(debugger.textboxes[i], x, y);
+
+            // Content
+            x  = content_box.x + indent; // Left align on indent
+            y += title_height;           // push down by title
+            textbox_draw(debugger.textboxes[debugger.static_textbox_count + i], x, y);
+
+            y += section_height;
+        }
+
+        // Draw vertical section divider
+        rect = (struct rect){
+            .x = content_box.x + section_width, // Start at end of left section
+            .y = content_box.y,                 // Start at top of content box
+            .w = divider_thickness,
+            .h = content_box.h, // End at bottom of content box
+        };
+        window_draw_rect_filled(debugger.window, rect, DEBUGGER_OUTLINE_COLOUR);
+
+        float left_content_width = section_width + divider_thickness; // Store left end pos
+        section_width =
+            content_box.w - section_width; // invert width (right should be whatever is remaining)
+
+        // Draw Flag Section
+        textbox_get_size(debugger.textboxes[3], &title_width, &title_height);
+        textbox_get_size(
+            debugger.textboxes[debugger.static_textbox_count + 3],
+            NULL, // Ignore actual section width
+            &section_height
+        );
+        rect = (struct rect){
+            .x = content_box.x + left_content_width,
+            .y = content_box.y,
+            .w = section_width,
+            .h = divider_thickness,
+        };
+        window_draw_rect_filled(debugger.window, rect, DEBUGGER_OUTLINE_COLOUR);
+        x = (content_box.x + left_content_width) + (section_width - title_width) / 2;
+        y = content_box.y + divider_thickness;
+        textbox_draw(debugger.textboxes[3], x, y);
+        x  = content_box.x + left_content_width + indent;
+        y += title_height;
+        textbox_draw(debugger.textboxes[debugger.static_textbox_count + 3], x, y);
+
+        // All CPU mode drawing should be done by this point
+        break;
+
+    // Draw PPU debug screen
+    case DEBUG_PPU:
+        break;
+
+    // Unknown mode
+    default:
+        log_error("Invalid debug mode set");
+        break;
+    }
+
+    window_present(debugger.window);
+
+    return;
+}
+
+static int emulation_loop(void* arg) {
+    while (true) {
+        SDL_LockRWLockForReading(gboy.control_rw_lock);
+        // Immediately exit if no longer running
+        if (gboy.running == false) { break; }
+        if (gboy.clock_speed == 0) {
+            // Light sleep and restart loop
+            SDL_UnlockRWLock(gboy.control_rw_lock);
+            SDL_WaitSemaphore(gboy.emulation_paused_sem);
+
+            // Double check if we should exit (prevents executing an additional step before
+            // exiting)
+            SDL_LockRWLockForReading(gboy.control_rw_lock);
+            if (gboy.running == false) { break; }
+            SDL_UnlockRWLock(gboy.control_rw_lock);
+        } else {
+            // Full sleep based on clock speed
+            Uint64 sleep_ns = 1000000000 / (Uint64)gboy.clock_speed;
+            SDL_UnlockRWLock(gboy.control_rw_lock);
+            SDL_DelayPrecise(sleep_ns);
+        }
+
+        // Step GBoy
+        // 4 t cycles for every m cycle
+        m_cycle();
+        t_cycle();
+        t_cycle();
+        t_cycle();
+        t_cycle();
+        debugger_update_slot_values();
+    }
+    SDL_UnlockRWLock(gboy.control_rw_lock);
+
+    return 0;
+}
+
+static void m_cycle(void) { log_debug("M Cycle"); }
+
+static void t_cycle(void) { log_debug("T Cycle"); }
+
+static void debugger_update_slot_values(void) {
+    if (gboy_debugger_is_open() == false) { return; }
+
+    SDL_LockRWLockForReading(debugger.mode_rw_lock);
+    enum debug_mode mode = debugger.mode;
+    SDL_UnlockRWLock(debugger.mode_rw_lock);
+
+    switch (mode) {
+    case DEBUG_CPU:
+        // Read from CPU
+        return;
+
+    case DEBUG_PPU:
+    default:
+        log_warn("Unsupported mode. No update slot loop written");
+        return;
+    }
+}
+
+static void debugger_event_handler(const struct event* evt) {
+    switch (evt->type) {
+    case EVENT_INPUT:
+        debugger_input_event(&evt->input);
+        return;
+    case EVENT_WINDOW:
+        debugger_window_event(&evt->window);
+        return;
+    default:
+        log_warn("Unhandled Event");
+        return;
+    }
+}
+
+static void debugger_window_event(const struct event_window* evt) {
+    switch (evt->type) {
+    case EVENT_WINDOW_CLOSE_REQUESTED:
+        gboy_debugger_close();
+        return;
+    case EVENT_WINDOW_DESTROYED:
+        return;
+    default:
+        log_warn("Unhandled window event");
+        return;
+    }
+}
+
+static void debugger_input_event(const struct event_input* evt) {
+    switch (evt->type) {
+    case EVENT_INPUT_BUTTON:
+        debugger_button_input_event(&evt->button);
+        return;
+
+    // Ignore mouse motion inputs
+    case EVENT_INPUT_MOTION:
+        return;
+
+    default:
+        log_warn("Unhandled input event");
+    }
+}
+
+static void debugger_button_input_event(const struct event_input_button* evt) {
+    switch (evt->device) {
+    case DEVICE_KEYBOARD:
+        // Close Debugger
+        if (evt->button == KEYCODE_GRAVE) {
+            // Ignore both keyup and repeat events
+            if (evt->down == false || evt->repeat == true) { return; }
+
+            gboy_debugger_close();
+            return;
+        }
+
+        // CPU Debug Mode
+        if (evt->button == KEYCODE_F1) {
+            // Ignore both keyup and repeat events
+            if (evt->down == false || evt->repeat == true) { return; }
+            SDL_LockRWLockForWriting(debugger.mode_rw_lock);
+            debugger.mode       = DEBUG_CPU;
+            debugger.mode_dirty = true;
+            SDL_UnlockRWLock(debugger.mode_rw_lock);
+            return;
+        }
+
+        // CPU Debug Mode
+        if (evt->button == KEYCODE_F2) {
+            // Ignore both keyup and repeat events
+            if (evt->down == false || evt->repeat == true) { return; }
+            SDL_LockRWLockForWriting(debugger.mode_rw_lock);
+            debugger.mode       = DEBUG_PPU;
+            debugger.mode_dirty = true;
+            SDL_UnlockRWLock(debugger.mode_rw_lock);
+            return;
+        }
+
+        // Ignore all other keyboard inputs
+        return;
+
+    default:
+        log_warn("Unhandled Device Button Input");
+        return;
+    }
+}
