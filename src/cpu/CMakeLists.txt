@@ -1,5 +1,6 @@
 target_sources(GBoy_Internal
     INTERFACE
-        registers/registers.c
-        alu/alu.c
+        registers.c
+        alu.c
+        cpu.c
 )

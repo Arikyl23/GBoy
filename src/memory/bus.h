@@ -9,7 +9,8 @@
 
 #define TABLE(X)                                                                                   \
     X(BUS_CPU, 0, "CPU")                                                                           \
-    X(BUS_PPU, 1, "PPU")
+    X(BUS_PPU, 1, "PPU")                                                                           \
+    X(BUS_EXTERN, 2, "EXTERN")
 
 /** @brief Enumeration representing which processor is accessing the Address Bus. */
 enum bus {

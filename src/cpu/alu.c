@@ -3,7 +3,7 @@
  * @brief File containing the core logic for the Arithmetic Logic Unit (ALU)
  * module.
  */
-#include "alu.h"
+#include "cpu/alu.h"
 
 // 8-bit Operations
 // ================
