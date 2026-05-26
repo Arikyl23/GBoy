@@ -10,8 +10,10 @@
 
 #include "DEFINES.h"
 #include "assets.h"
+#include "cpu/cpu.h"
 #include "display/textbox.h"
 #include "display/window.h"
+#include "memory/mmu.h"
 
 LOG_MODULE_SETUP("GBoy", CONFIG_GBOY_MODULE_LOG_LEVEL);
 
@@ -32,7 +34,7 @@ LOG_MODULE_SETUP("GBoy", CONFIG_GBOY_MODULE_LOG_LEVEL);
 #define DEBUGGER_TEXTBOX_COUNT     16
 #define DEBUGGER_BAR_HEIGHT        50
 #define DEBUGGER_BAR_BOX_WIDTH     (DEBUGGER_WIDTH / DEBUGGER_MODE_COUNT)
-#define DEBUGGER_SLOT_COUNT        20
+#define DEBUGGER_SLOT_COUNT        25
 #define DEBUGGER_SLOT_STRING_LEN   16
 
 #define LOG_SDL_ERROR(msg)                                                                         \
@@ -101,6 +103,11 @@ static int  emulation_loop(void* arg);
 static void m_cycle(void);
 static void t_cycle(void);
 
+static inline bool debugger_is_any_slot_dirty(
+    const struct debug_slot* slots,
+    const size_t             start_inclusive,
+    const size_t             end_inclusive
+);
 static void debugger_update_slot_values(void);
 static void debugger_event_handler(const struct event* evt);
 static void debugger_window_event(const struct event_window* evt);
@@ -330,6 +337,10 @@ void gboy_debugger_open(void) {
 
     window_register_event_handler(debugger.window, debugger_event_handler);
 
+    // Before finishing up, check if emulator is currently paused
+    // If so, we should quickly update the debuggers slot values
+    if (gboy_get_clock_speed() == 0) { debugger_update_slot_values(); }
+
     return;
 
 err_cleanup:
@@ -463,32 +474,64 @@ void gboy_debugger_update(void) {
     case DEBUG_CPU:
         // Content Window:
         //
-        //           Control             |        Flags
-        // PC: 0x0000 -> 0x00            |
-        // SP: 0x0000 -> 0x00 (000)      | Zero........(z): [x]
-        // ------------------------------| Subtraction.(n): [x]
-        //            16-bit             | Half Carry..(h): [x]
-        // BC: 0x0000 (000) -> 0x00 (000)| Carry.......(c): [x]
-        // DE: 0x0000 (000) -> 0x00 (000)|
-        // HL: 0x0000 (000) -> 0x00 (000)|
-        // AF: 0x0000 (000) -> 0x00 (000)|
-        // ------------------------------|
-        //             8-bit             |
-        //  B: 0x00   (000) C: 0x00 (000)|
-        //  D: 0x00   (000) E: 0x00 (000)|
-        //  H: 0x00   (000) L: 0x00 (000)|
-        //  A: 0x00   (000) F: 0x00 (000)|
+        //           Control               |  Flags
+        // PC: 0x0000 -> 0x00 | 0x00  0x00 |
+        // SP: 0x0000 -> 0x00 | 0x00  0x00 | Z: [x]
+        // --------------------------------| N: [x]
+        //            16-bit               | H: [x]
+        // BC: 0x0000 (00000) -> 0x00 (000)| C: [x]
+        // DE: 0x0000 (00000) -> 0x00 (000)|
+        // HL: 0x0000 (00000) -> 0x00 (000)|
+        // AF: 0x0000 (00000)              |
+        // --------------------------------|
+        //             8-bit               |
+        //  B: 0x00   (000)   C: 0x00 (000)|
+        //  D: 0x00   (000)   E: 0x00 (000)|
+        //  H: 0x00   (000)   L: 0x00 (000)|
+        //  A: 0x00   (000)   F: 0x00 (000)|
+
+        // CPU mode Slots:
+        // - Core Section [0-5]:
+        //  - PC w/ indirect  [0]
+        //  - PC indirect + 1 [1]
+        //  - PC indirect + 2 [2]
+        //  - SP w/ indirect  [3]
+        //  - SP indirect + 1 [4]
+        //  - SP indirect + 2 [5]
+        // - 16-bit Section [6-9]:
+        //  - BC w/ indirect [6]
+        //  - DE w/ indirect [7]
+        //  - HL w/ indirect [8]
+        //  - AF             [9]
+        // - 8-bit Section [10-17]:
+        //  - B [10]
+        //  - C [11]
+        //  - D [12]
+        //  - E [13]
+        //  - H [14]
+        //  - L [15]
+        //  - A [16]
+        //  - F [17]
+        // - Flags Section [18-21]:
+        //  - Z [18]
+        //  - N [19]
+        //  - H [20]
+        //  - C [21]
+        // 21 total slots in use
+
+        const size_t cpu_slots_in_use = 21;
 
         const char* const textbox_fmts[] = {
-            "PC: 0x%1$.4X -> 0x%2$.2X\nSP: 0x%3$.4X -> 0x%4$.2X (%4$03u)",
-            "BC: 0x%1$.4X (%1$03u) -> 0x%2$.2X (%2$03u)\n"
-            "DE: 0x%3$.4X (%3$03u) -> 0x%4$.2X (%4$03u)\n"
-            "HL: 0x%5$.4X (%5$03u) -> 0x%6$.2X (%6$03u)\n"
-            "AF: 0x%7$.4X (%7$03u) -> 0x%8$.2X (%8$03u)",
-            " B: 0x%1$.2X (%1$03u) C: 0x%2$.2X (%2$03u)\n"
-            " D: 0x%3$.2X (%3$03u) E: 0x%4$.2X (%4$03u)\n"
-            " H: 0x%5$.2X (%5$03u) L: 0x%6$.2X (%6$03u)\n"
-            " A: 0x%7$.2X (%7$03u) F: 0x%8$.2X (%8$03u)",
+            "PC: 0x%1$.4X -> 0x%2$.2X | 0x%3$.2X  0x%4$.2X\nSP: 0x%5$.4X -> 0x%6$.2X | 0x%7$.2X  "
+            "0x%8$.2X",
+            "BC: 0x%1$.4X (%1$05u) -> 0x%2$.2X (%2$03u)\n"
+            "DE: 0x%3$.4X (%3$05u) -> 0x%4$.2X (%4$03u)\n"
+            "HL: 0x%5$.4X (%5$05u) -> 0x%6$.2X (%6$03u)\n"
+            "AF: 0x%7$.4X (%7$05u)",
+            " B: 0x%1$.2X (%1$03u)     C: 0x%2$.2X (%2$03u)\n"
+            " D: 0x%3$.2X (%3$03u)     E: 0x%4$.2X (%4$03u)\n"
+            " H: 0x%5$.2X (%5$03u)     L: 0x%6$.2X (%6$03u)\n"
+            " A: 0x%7$.2X (%7$03u)     F: 0x%8$.2X (%8$03u)",
             "Z: [%1$c]\n"
             "N: [%2$c]\n"
             "H: [%3$c]\n"
@@ -496,41 +539,25 @@ void gboy_debugger_update(void) {
         };
 
         // Make a copy of the slots to prevent halting the emulation loop
-        const size_t cpu_slots_in_use = 18;
         SDL_LockRWLockForWriting(debugger.slot_values_rw_lock);
         SDL_memcpy(slots, debugger.slot_values, sizeof(struct debug_slot) * cpu_slots_in_use);
-        for (int i = 0; i < cpu_slots_in_use; i++) {
-            // Slots 0-5 should be 16-bit registers with indirect (WORDs)
-            if (i < 6) {
-                if (debugger.slot_values[i].type != SLOT_WORD ||
-                    debugger.slot_values[i].word.has_indirect == false) {
-                    // log_warn("Debugger: Expected a WORD with INDIRECT in SLOT %i", i);
-                }
-                // Slots 6-13 should be 8-bit registers (BYTEs)
-            } else if (i < 14) {
-                if (debugger.slot_values[i].type != SLOT_BYTE) {
-                    // log_warn("Debugger: Expected a BYTE in SLOT %i, i");
-                }
-                // Slots 14-17 should be booleans
-            } else if (i < 18) {
-                if (debugger.slot_values[i].type != SLOT_BOOL) {
-                    // log_warn("Debugger: Expected a BOOL in SLOT %i, i");
-                }
-            }
-            debugger.slot_values[i].dirty = false;
-        }
+        for (int i = 0; i < cpu_slots_in_use; i++) { debugger.slot_values[i].dirty = false; }
         SDL_UnlockRWLock(debugger.slot_values_rw_lock);
 
-        // Update Core section text if any dependant slots [0-1] are dirty (or if mode was dirty)
-        if (mode_dirty == true || slots[0].dirty == true || slots[1].dirty == true) {
+        // Update Core section text if any dependant slots [0-5] are dirty (or if mode was dirty)
+        if (mode_dirty == true || debugger_is_any_slot_dirty(slots, 0, 5)) {
             int required_length = SDL_snprintf(
                 textbox_text_buf,
                 textbox_text_capacity,
                 textbox_fmts[0],
                 slots[0].word.value,
                 slots[0].word.indirect,
-                slots[1].word.value,
-                slots[1].word.indirect
+                slots[1].byte,
+                slots[2].byte,
+                slots[3].word.value,
+                slots[3].word.indirect,
+                slots[4].byte,
+                slots[5].byte
             );
             if (required_length >= textbox_text_capacity) {
                 log_error("Debugger: Attempted to format full slot line but overran the buffer. "
@@ -542,22 +569,20 @@ void gboy_debugger_update(void) {
             );
         }
 
-        // Update 16-bit register section text if any dependant slots [2-5] are dirty (or if mode
+        // Update 16-bit register section text if any dependant slots [6-9] are dirty (or if mode
         // was dirty)
-        if (mode_dirty == true || slots[2].dirty == true || slots[3].dirty == true ||
-            slots[4].dirty == true || slots[5].dirty == true) {
+        if (mode_dirty == true || debugger_is_any_slot_dirty(slots, 6, 9)) {
             int required_length = SDL_snprintf(
                 textbox_text_buf,
                 textbox_text_capacity,
                 textbox_fmts[1],
-                slots[2].word.value,
-                slots[2].word.indirect,
-                slots[3].word.value,
-                slots[3].word.indirect,
-                slots[4].word.value,
-                slots[4].word.indirect,
-                slots[5].word.value,
-                slots[5].word.indirect
+                slots[6].word.value,
+                slots[6].word.indirect,
+                slots[7].word.value,
+                slots[7].word.indirect,
+                slots[8].word.value,
+                slots[8].word.indirect,
+                slots[9].word.value
             );
             if (required_length >= textbox_text_capacity) {
                 log_error("Debugger: Attempted to format full slot line but overran the buffer. "
@@ -569,23 +594,21 @@ void gboy_debugger_update(void) {
             );
         }
 
-        // Update 8-bit register section text if any dependant slots [6-13] are dirty (or if mode
+        // Update 8-bit register section text if any dependant slots [10-17] are dirty (or if mode
         // was dirty)
-        if (mode_dirty == true || slots[6].dirty == true || slots[7].dirty == true ||
-            slots[8].dirty == true || slots[9].dirty == true || slots[10].dirty == true ||
-            slots[11].dirty == true || slots[12].dirty == true || slots[13].dirty == true) {
+        if (mode_dirty == true || debugger_is_any_slot_dirty(slots, 10, 17)) {
             int required_length = SDL_snprintf(
                 textbox_text_buf,
                 textbox_text_capacity,
                 textbox_fmts[2],
-                slots[6].byte,
-                slots[7].byte,
-                slots[8].byte,
-                slots[9].byte,
                 slots[10].byte,
                 slots[11].byte,
                 slots[12].byte,
-                slots[13].byte
+                slots[13].byte,
+                slots[14].byte,
+                slots[15].byte,
+                slots[16].byte,
+                slots[17].byte
             );
             if (required_length >= textbox_text_capacity) {
                 log_error("Debugger: Attempted to format full slot line but overran the buffer. "
@@ -597,17 +620,16 @@ void gboy_debugger_update(void) {
             );
         }
 
-        // Update flags section text if any dependant slots [14-17] are dirty (or if mode was dirty)
-        if (mode_dirty == true || slots[14].dirty == true || slots[15].dirty == true ||
-            slots[16].dirty == true || slots[17].dirty == true) {
+        // Update flags section text if any dependant slots [18-21] are dirty (or if mode was dirty)
+        if (mode_dirty == true || debugger_is_any_slot_dirty(slots, 18, 21)) {
             int required_length = SDL_snprintf(
                 textbox_text_buf,
                 textbox_text_capacity,
                 textbox_fmts[3],
-                (slots[14].boolean == true) ? 'x' : ' ',
-                (slots[15].boolean == true) ? 'x' : ' ',
-                (slots[16].boolean == true) ? 'x' : ' ',
-                (slots[17].boolean == true) ? 'x' : ' '
+                (slots[18].boolean == true) ? 'x' : ' ',
+                (slots[19].boolean == true) ? 'x' : ' ',
+                (slots[20].boolean == true) ? 'x' : ' ',
+                (slots[21].boolean == true) ? 'x' : ' '
             );
             if (required_length >= textbox_text_capacity) {
                 log_error("Debugger: Attempted to format full slot line but overran the buffer. "
@@ -728,7 +750,13 @@ void gboy_debugger_update(void) {
     return;
 }
 
+#include <time.h>
+
 static int emulation_loop(void* arg) {
+
+    //! NOTE SLEEPING ON A SEMAPHORE IS TOO SLOW. OS TAKES WAY TOO LONG TO WAKE THE THREAD BACK UP
+    //! (0.6 [ms])
+    // TODO: Switch loop to work as a spin loop and force the kernel to preempt us instead.
     while (true) {
         SDL_LockRWLockForReading(gboy.control_rw_lock);
         // Immediately exit if no longer running
@@ -764,9 +792,28 @@ static int emulation_loop(void* arg) {
     return 0;
 }
 
-static void m_cycle(void) { log_debug("M Cycle"); }
+static void m_cycle(void) {
+    log_debug("M Cycle");
+
+    if (cpu_execute() != 0) {
+        log_warn("CPU reported an error. Pausing emulation");
+        // if cpu reports an error, immediately lock up the emulation thread by pausing it
+        gboy_set_clock_speed(0);
+    }
+}
 
 static void t_cycle(void) { log_debug("T Cycle"); }
+
+static inline bool debugger_is_any_slot_dirty(
+    const struct debug_slot* slots,
+    const size_t             start_inclusive,
+    const size_t             end_inclusive
+) {
+    for (size_t i = start_inclusive; i <= end_inclusive; i++) {
+        if (slots[i].dirty == true) { return true; }
+    }
+    return false;
+}
 
 static void debugger_update_slot_values(void) {
     if (gboy_debugger_is_open() == false) { return; }
@@ -778,6 +825,111 @@ static void debugger_update_slot_values(void) {
     switch (mode) {
     case DEBUG_CPU:
         // Read from CPU
+        struct registers reg          = cpu_snapshot_registers();
+        word             r16_values[] = {reg.PC, reg.SP, reg.BC, reg.DE, reg.HL, reg.AF};
+        byte             indirects[]  = {
+            mmu_read(BUS_EXTERN, reg.PC),
+            mmu_read(BUS_EXTERN, reg.PC + 1),
+            mmu_read(BUS_EXTERN, reg.PC + 2),
+            mmu_read(BUS_EXTERN, reg.SP),
+            mmu_read(BUS_EXTERN, reg.SP - 1),
+            mmu_read(BUS_EXTERN, reg.SP - 2),
+            mmu_read(BUS_EXTERN, reg.BC),
+            mmu_read(BUS_EXTERN, reg.DE),
+            mmu_read(BUS_EXTERN, reg.HL)
+        };
+        byte r8_values[] = {reg.B, reg.C, reg.D, reg.E, reg.H, reg.L, reg.A, reg.F};
+        bool flags[]     = {
+            registers_get_flag_z(&reg),
+            registers_get_flag_n(&reg),
+            registers_get_flag_h(&reg),
+            registers_get_flag_c(&reg)
+        };
+
+        SDL_LockRWLockForWriting(debugger.slot_values_rw_lock);
+        // PC
+        if (debugger.slot_values[0].word.value != r16_values[0] ||
+            debugger.slot_values[0].word.indirect != indirects[0]) {
+            debugger.slot_values[0] = (struct debug_slot){
+                .word.value        = r16_values[0],
+                .word.has_indirect = true,
+                .word.indirect     = indirects[0],
+                .dirty             = true,
+            };
+        }
+        // Additional PC indirects
+        for (int i = 0; i < 2; i++) {
+            if (debugger.slot_values[1 + i].byte != indirects[1 + i]) {
+                debugger.slot_values[1 + i] = (struct debug_slot){
+                    .byte  = indirects[1 + i],
+                    .dirty = true,
+                };
+            }
+        }
+
+        // SP
+        if (debugger.slot_values[3].word.value != r16_values[1] ||
+            debugger.slot_values[3].word.indirect != indirects[3]) {
+            debugger.slot_values[3] = (struct debug_slot){
+                .word.value        = r16_values[1],
+                .word.has_indirect = true,
+                .word.indirect     = indirects[3],
+                .dirty             = true,
+            };
+        }
+        // Additional SP indirects
+        for (int i = 0; i < 2; i++) {
+            if (debugger.slot_values[4 + i].byte != indirects[4 + i]) {
+                debugger.slot_values[4 + i] = (struct debug_slot){
+                    .byte  = indirects[4 + i],
+                    .dirty = true,
+                };
+            }
+        }
+
+        // BC, DE, HL
+        for (int i = 0; i < 3; i++) {
+            if (debugger.slot_values[6 + i].word.value != r16_values[2 + i] ||
+                debugger.slot_values[6 + i].word.indirect != indirects[6 + i]) {
+                debugger.slot_values[6 + i] = (struct debug_slot){
+                    .word.value        = r16_values[2 + i],
+                    .word.has_indirect = true,
+                    .word.indirect     = indirects[6 + i],
+                    .dirty             = true,
+                };
+            }
+        }
+
+        // AF
+        if (debugger.slot_values[9].word.value != r16_values[5]) {
+            debugger.slot_values[9] = (struct debug_slot){
+                .word.value        = r16_values[5],
+                .word.has_indirect = false,
+                .word.indirect     = 0x00,
+                .dirty             = true,
+            };
+        }
+
+        // B, C, D, E, H, L, A, F
+        for (int i = 0; i < 8; i++) {
+            if (debugger.slot_values[10 + i].byte != r8_values[i]) {
+                debugger.slot_values[10 + i] = (struct debug_slot){
+                    .byte  = r8_values[i],
+                    .dirty = true,
+                };
+            }
+        }
+
+        // Z, N, H, C flags
+        for (int i = 0; i < 4; i++) {
+            if (debugger.slot_values[18 + i].byte != flags[i]) {
+                debugger.slot_values[18 + i] = (struct debug_slot){
+                    .boolean = flags[i],
+                    .dirty   = true,
+                };
+            }
+        }
+        SDL_UnlockRWLock(debugger.slot_values_rw_lock);
         return;
 
     case DEBUG_PPU:
@@ -809,7 +961,6 @@ static void debugger_window_event(const struct event_window* evt) {
     case EVENT_WINDOW_DESTROYED:
         return;
     default:
-        log_warn("Unhandled window event");
         return;
     }
 }

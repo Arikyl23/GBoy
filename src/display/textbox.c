@@ -12,7 +12,7 @@
 #include "display/texture_internal.h"
 #include "display/window_internal.h"
 
-LOG_MODULE_SETUP("Textbox", CONFIG_TEXT_MODULE_LOG_LEVEL)
+LOG_MODULE_SETUP("Textbox", CONFIG_TEXTBOX_MODULE_LOG_LEVEL)
 
 #define LOG_SDL_ERROR(msg)                                                                         \
     do {                                                                                           \

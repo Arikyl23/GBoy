@@ -69,9 +69,19 @@ static void gboy_window_handle_button_input(const struct event_input_button* evt
             return;
         }
 
+        // Step / Speed up emulation
         if (evt->button == KEYCODE_RIGHT) {
-            // Step once (on down only)
-            if (evt->down == true && evt->repeat == false) { gboy_step(); }
+            // Only down events
+            if (evt->down == false) { return; }
+            size_t clock_speed = gboy_get_clock_speed();
+            // Is gboy paused?
+            if (clock_speed == 0) {
+                // Only step the first press
+                if (evt->repeat == true) { return; }
+                gboy_step();
+            } else {
+                gboy_set_clock_speed(clock_speed + 1);
+            }
             return;
         }
 
@@ -182,10 +192,10 @@ int main(void) {
     window_register_event_handler(m_gboy_window, gboy_window_event_handler);
 
     // Enabled GBoy
-    gboy_debugger_open();
     gboy_poweron(0);
     gboy_get_lcd(m_pixel_buffer, GBOY_LCD_SIZE);
     update_frame();
+    gboy_debugger_open();
 
     // Just loop for now
     while (m_active == true && m_gboy_window != NULL) {

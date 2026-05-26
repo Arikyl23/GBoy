@@ -6,7 +6,7 @@
 #include <stdbool.h>
 
 #include "DEFINES.h"
-#include "cpu/alu/alu.h"
+#include "cpu/alu.h"
 #include "testing.h"
 
 LOG_MODULE_SETUP_DEFAULT("UNIT TEST ALU");
