@@ -17,9 +17,9 @@ LOG_MODULE_SETUP("WINDOW", CONFIG_WINDOW_MODULE_LOG_LEVEL);
 
 // Sub-systems to init for each window.
 // Note: INPUT sub-system is always initialized
-#define WINDOW_SDL_SUBSYSTEMS (SDL_INIT_VIDEO)
-#define WINDOW_DEFAULT_FLAGS  (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_RESIZABLE)
-#define WINDOW_SCALE_MODE     (SDL_LOGICAL_PRESENTATION_LETTERBOX)
+#define WINDOW_SDL_SUBSYSTEMS      (SDL_INIT_VIDEO)
+#define WINDOW_DEFAULT_FLAGS       (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_RESIZABLE)
+#define RENDERER_LOGICAL_PRES_MODE (SDL_LOGICAL_PRESENTATION_LETTERBOX)
 
 #define LOG_SDL_ERROR(msg)                                                                         \
     do {                                                                                           \
@@ -77,8 +77,12 @@ struct window* window_create(
         goto err_cleanup;
     }
 
-    if (SDL_SetRenderLogicalPresentation(rtn->renderer, width, height, WINDOW_SCALE_MODE) ==
-        false) {
+    if (SDL_SetRenderLogicalPresentation(
+            rtn->renderer,
+            width,
+            height,
+            RENDERER_LOGICAL_PRES_MODE
+        ) == false) {
         LOG_SDL_ERROR("SDL failed to decouple renderer size from window size.");
         goto err_cleanup;
     }

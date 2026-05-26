@@ -70,42 +70,75 @@
 // 0xFFFF      | IE        | Interrupt enable                                                  | R/W                 | All
 // clang-format on
 
-#define REG_JOYP  0xFF00
-#define REG_SB    0xFF01
-#define REG_SC    0xFF02
-#define REG_DIV   0xFF04
-#define REG_TIMA  0xFF05
-#define REG_TMA   0xFF06
-#define REG_TAC   0xFF07
-#define REG_IF    0xFF0F
-#define REG_NR10  0xFF10
-#define REG_NR11  0xFF11
-#define REG_NR12  0xFF12
-#define REG_NR13  0xFF13
-#define REG_NR14  0xFF14
-#define REG_NR21  0xFF16
-#define REG_NR22  0xFF17
-#define REG_NR23  0xFF18
-#define REG_NR24  0xFF19
-#define REG_NR30  0xFF1A
-#define REG_NR31  0xFF1B
-#define REG_NR32  0xFF1C
-#define REG_NR33  0xFF1D
-#define REG_NR34  0xFF1E
-#define REG_NR41  0xFF20
-#define REG_NR42  0xFF21
-#define REG_NR43  0xFF22
-#define REG_NR44  0xFF23
-#define REG_NR50  0xFF24
-#define REG_NR51  0xFF25
-#define REG_NR52  0xFF26
-#define REG_Wave  0xFF30
-#define REG_LCDC  0xFF40
-#define REG_STAT  0xFF41
-#define REG_SCY   0xFF42
-#define REG_SCX   0xFF43
-#define REG_LY    0xFF44
-#define REG_LYC   0xFF45
+#define REG_JOYP 0xFF00
+#define REG_SB   0xFF01
+#define REG_SC   0xFF02
+#define REG_DIV  0xFF04
+#define REG_TIMA 0xFF05
+#define REG_TMA  0xFF06
+#define REG_TAC  0xFF07
+#define REG_IF   0xFF0F
+#define REG_NR10 0xFF10
+#define REG_NR11 0xFF11
+#define REG_NR12 0xFF12
+#define REG_NR13 0xFF13
+#define REG_NR14 0xFF14
+#define REG_NR21 0xFF16
+#define REG_NR22 0xFF17
+#define REG_NR23 0xFF18
+#define REG_NR24 0xFF19
+#define REG_NR30 0xFF1A
+#define REG_NR31 0xFF1B
+#define REG_NR32 0xFF1C
+#define REG_NR33 0xFF1D
+#define REG_NR34 0xFF1E
+#define REG_NR41 0xFF20
+#define REG_NR42 0xFF21
+#define REG_NR43 0xFF22
+#define REG_NR44 0xFF23
+#define REG_NR50 0xFF24
+#define REG_NR51 0xFF25
+#define REG_NR52 0xFF26
+#define REG_Wave 0xFF30
+
+/** @brief LCD Control Registers. */
+#define REG_LCDC                   0xFF40
+/** @brief 0b10000000 | (R/W) | LCD & PPU enable. */
+#define REG_LCDC_PPU_ENABLE_MASK   0x80
+/** @brief 0b01000000 | (R/W) | Window tile map area. */
+#define REG_LCDC_WIN_TILE_MAP_MASK 0x40
+/** @brief 0b00100000 | (R/W) | Window enable. */
+#define REG_LCDC_WIN_ENABLE_MASK   0x20
+/** @brief 0b00010000 | (R/W) | BKG & Window tile data area. */
+#define REG_LCDC_TILE_DATA_MASK    0x10
+/** @brief 0b00001000 | (R/W) | BKG tile map area. */
+#define REG_LCDC_BKG_TILE_MAP_MASK 0x08
+/** @brief 0b00000100 | (R/W) | Object size. */
+#define REG_LCDC_OBJ_SIZE_MASK     0x04
+/** @brief 0b00000010 | (R/W) | Object enable. */
+#define REG_LCDC_OBJ_ENABLE_MASK   0x02
+/** @brief 0b00000001 | (R/W) | BKG & Window enable/priority. */
+#define REG_LCDC_PRIORITY_MASK     0x01
+
+/** @brief LCD Status Registers. */
+#define REG_STAT                    0xFF41
+/** @brief 0b01000000 | (R/W) | LYC int select. */
+#define REG_STAT_LYC_INT_SEL_MASK   0x40
+/** @brief 0b00100000 | (R/W) | Mode 2 int select. */
+#define REG_STAT_MODE2_INT_SEL_MASK 0x20
+/** @brief 0b00010000 | (R/W) | Mode 1 int select. */
+#define REG_STAT_MODE1_INT_SEL_MASK 0x10
+/** @brief 0b00001000 | (R/W) | Mode 0 int select. */
+#define REG_STAT_MODE0_INT_SEL_MASK 0x08
+/** @brief 0b00000100 | (R)   | LYC == LY condition. */
+#define REG_STAT_LYC_LY_EQ_MASK     0x04
+/** @brief 0b00000011 | (R)   | PPU Mode. */
+#define REG_STAT_MODE_MASK          0x03
+
+#define REG_SCY   0xFF42 /** @brief Viewport Y position. */
+#define REG_SCX   0xFF43 /** @brief Viewport X position. */
+#define REG_LY    0xFF44 /** @brief LCD Y coordinate. */
+#define REG_LYC   0xFF45 /** @brief LY compare. */
 #define REG_DMA   0xFF46
 #define REG_BGP   0xFF47
 #define REG_OBP0  0xFF48
