@@ -23,8 +23,6 @@ LOG_MODULE_SETUP("GBoy", CONFIG_GBOY_MODULE_LOG_LEVEL);
 
 #define FONT_FILEPATH "assets/fonts/JetBrainsMono-Regular.ttf"
 
-#define GBOY_IDLE_SLEEP_MS 500
-
 #define DEBUGGER_WIDTH             620
 #define DEBUGGER_HEIGHT            480
 #define DEBUGGER_MODE_COUNT        2
@@ -51,9 +49,8 @@ static struct {
     struct cartridge* cart;
 
     // Control data
-    SDL_RWLock* control_rw_lock;
-    bool        running;
-    size_t      clock_speed;
+    SDL_AtomicInt running;
+    SDL_AtomicU32 clock_speed;
 
     // Emulation Thread Data
     SDL_Thread*    emulation_thread;
@@ -153,26 +150,20 @@ void gboy_eject_cart(void) {
 }
 
 bool gboy_poweron(const size_t clock_speed) {
-    if (m_gboy.control_rw_lock != NULL) {
+    if (SDL_GetAtomicInt(&m_gboy.running) == true) {
         log_warn("GBoy is already running. Call gboy_poweroff() first.");
         return false;
     }
 
-    // Setup RW locks
-    m_gboy.control_rw_lock = SDL_CreateRWLock();
-    if (m_gboy.control_rw_lock == NULL) {
-        LOG_SDL_ERROR("Could not power on GBoy. SDL failed to create RWLock.");
-        goto err_cleanup;
-    }
-    m_gboy.lcd_rw_lock = SDL_CreateRWLock();
-    if (m_gboy.control_rw_lock == NULL) {
-        LOG_SDL_ERROR("Could not power on GBoy. SDL failed to create RWLock.");
-        goto err_cleanup;
-    }
+    SDL_SetAtomicU32(&m_gboy.clock_speed, 0);
 
-    // Setup properties
-    m_gboy.running     = true;
-    m_gboy.clock_speed = clock_speed;
+    // Setup RW locks
+    m_gboy.lcd_rw_lock = SDL_CreateRWLock();
+    if (m_gboy.lcd_rw_lock == NULL) {
+        LOG_SDL_ERROR("Could not power on GBoy. SDL failed to create LCD RWLock.");
+        goto err_cleanup;
+    }
+    // Setup LCD
     for (size_t i = 0; i < GBOY_LCD_SIZE; i++) { m_gboy.lcd[i] = (pixel_t){0, 0, 0, 255}; }
 
     // Setup Thread
@@ -181,6 +172,9 @@ bool gboy_poweron(const size_t clock_speed) {
         LOG_SDL_ERROR("Could not power on GBoy. SDL failed to create emulation semaphore.");
         goto err_cleanup;
     }
+
+    SDL_SetAtomicInt(&m_gboy.running, true);
+
     //! This must always be the last thing to setup incase our current thread gets preempted
     //! Must ensure GBoy is in a fully initialized state
     m_gboy.emulation_thread = SDL_CreateThread(emulation_loop, "gboy::emulation", NULL);
@@ -192,11 +186,7 @@ bool gboy_poweron(const size_t clock_speed) {
     return true;
 
 err_cleanup:
-    m_gboy.running = false;
-    if (m_gboy.control_rw_lock != NULL) {
-        SDL_DestroyRWLock(m_gboy.control_rw_lock);
-        m_gboy.control_rw_lock = NULL;
-    }
+    SDL_SetAtomicInt(&m_gboy.running, false);
     if (m_gboy.lcd_rw_lock != NULL) {
         SDL_DestroyRWLock(m_gboy.lcd_rw_lock);
         m_gboy.lcd_rw_lock = NULL;
@@ -210,85 +200,70 @@ err_cleanup:
 }
 
 void gboy_poweroff(void) {
-    if (m_gboy.control_rw_lock == NULL) {
+    if (SDL_GetAtomicInt(&m_gboy.running) == false) {
         log_warn("Gboy is already powered off.");
         return;
     }
 
-    // Stop thread
-    SDL_LockRWLockForWriting(m_gboy.control_rw_lock);
-    m_gboy.running     = false;
-    // Ensure thread can run in the event it is currently paused
-    m_gboy.clock_speed = 1;
+    // Ensure thread can run to completion in the event it is currently paused
+    SDL_SetAtomicInt(&m_gboy.running, false);
+    SDL_SetAtomicU32(&m_gboy.clock_speed, 1);
     SDL_SignalSemaphore(m_gboy.emulation_paused_sem);
-    SDL_UnlockRWLock(m_gboy.control_rw_lock);
     SDL_WaitThread(m_gboy.emulation_thread, NULL);
     //* Note: Safe to NULL the thread object after it has exited as SDL will have already cleaned it
     //*       up
     m_gboy.emulation_thread = NULL;
 
     // Destroy remaing GBoy state
-    SDL_DestroyRWLock(m_gboy.control_rw_lock);
-    m_gboy.control_rw_lock = NULL;
     SDL_DestroyRWLock(m_gboy.lcd_rw_lock);
     m_gboy.lcd_rw_lock = NULL;
     SDL_DestroySemaphore(m_gboy.emulation_paused_sem);
     m_gboy.emulation_paused_sem = NULL;
-    m_gboy.clock_speed          = 0;
 }
 
 bool gboy_step(void) {
-    if (m_gboy.control_rw_lock == NULL) {
+    if (SDL_GetAtomicInt(&m_gboy.running) == false) {
         log_warn("GBoy is powered off. Cannot step the emulation.");
         return false;
     }
 
-    SDL_LockRWLockForReading(m_gboy.control_rw_lock);
-    if (m_gboy.clock_speed != 0) {
-        SDL_UnlockRWLock(m_gboy.control_rw_lock);
+    if (SDL_GetAtomicU32(&m_gboy.clock_speed) != 0) {
         log_warn("GBoy clock speed is non-zero. Cannot step the emulation.");
         return false;
     }
-    SDL_UnlockRWLock(m_gboy.control_rw_lock);
 
     SDL_SignalSemaphore(m_gboy.emulation_paused_sem);
 
     return true;
 }
 
-bool gboy_set_clock_speed(const size_t clock_speed) {
-    if (m_gboy.control_rw_lock == NULL) {
+bool gboy_set_clock_speed(const uint32_t clock_speed) {
+    if (SDL_GetAtomicInt(&m_gboy.running) == false) {
         log_warn("GBoy is powered off. Cannot step the emulation.");
         return false;
     }
 
-    SDL_LockRWLockForWriting(m_gboy.control_rw_lock);
-    m_gboy.clock_speed = clock_speed;
+    SDL_SetAtomicU32(&m_gboy.clock_speed, clock_speed);
 
     if (clock_speed == 0) {
         // User is attempting to pause the emulated, ensure pause semaphore is empty by draining it
         while (SDL_TryWaitSemaphore(m_gboy.emulation_paused_sem));
     } else if (SDL_GetSemaphoreValue(m_gboy.emulation_paused_sem) == 0) {
-        // User is either unpausing or change emulation speed. Ensure pause is exited (since we
+        // User is either unpausing or changing emulation speed. Ensure pause is exited (since we
         // drain on pause, this is safe).
         SDL_SignalSemaphore(m_gboy.emulation_paused_sem);
     }
-    SDL_UnlockRWLock(m_gboy.control_rw_lock);
 
     return true;
 }
 
-size_t gboy_get_clock_speed(void) {
-    if (m_gboy.control_rw_lock == NULL) {
+uint32_t gboy_get_clock_speed(void) {
+    if (SDL_GetAtomicInt(&m_gboy.running) == false) {
         log_warn("GBoy is powered off. Returning clock speed of 0");
         return 0;
     }
 
-    SDL_LockRWLockForReading(m_gboy.control_rw_lock);
-    size_t clock_speed = m_gboy.clock_speed;
-    SDL_UnlockRWLock(m_gboy.control_rw_lock);
-
-    return clock_speed;
+    return SDL_GetAtomicU32(&m_gboy.clock_speed);
 }
 
 bool gboy_get_lcd(pixel_t* pixel_buffer, const size_t size) {
@@ -306,7 +281,7 @@ bool gboy_get_lcd(pixel_t* pixel_buffer, const size_t size) {
         return false;
     }
 
-    if (m_gboy.control_rw_lock == NULL) {
+    if (SDL_GetAtomicInt(&m_gboy.running) == false) {
         log_debug("GBoy is powered off. Returning blank (black) frame");
         for (size_t i = 0; i < GBOY_LCD_SIZE; i++) { pixel_buffer[i] = (pixel_t){0, 0, 0, 255}; }
         return true;
@@ -333,7 +308,7 @@ void gboy_set_lcd_pixel(const size_t x, const size_t y, const pixel_t pixel) {
         return;
     }
 
-    if (m_gboy.control_rw_lock == NULL) {
+    if (SDL_GetAtomicInt(&m_gboy.running) == false) {
         log_error("Managed to call set lcd pixel while gameboy is powered off!?");
         return;
     }
@@ -1014,41 +989,64 @@ void gboy_debugger_update(void) {
 }
 
 static int emulation_loop(void* arg) {
+    Uint32 prev_clock_speed = SDL_GetAtomicU32(&m_gboy.clock_speed);
+    Uint64 target           = SDL_GetPerformanceCounter();
+    Uint64 now;
+    Uint64 tick_increment =
+        (prev_clock_speed == 0) ? 0 : SDL_GetPerformanceFrequency() / (Uint64)prev_clock_speed;
+    Uint64 tick_remainder =
+        (prev_clock_speed == 0) ? 0 : SDL_GetPerformanceFrequency() % (Uint64)prev_clock_speed;
+    Uint64 frac_accum = 0;
 
-    //! NOTE SLEEPING ON A SEMAPHORE IS TOO SLOW. OS TAKES WAY TOO LONG TO WAKE THE THREAD BACK UP
-    //! (0.6 [ms])
-    // TODO: Switch loop to work as a spin loop and force the kernel to preempt us instead.
-    while (true) {
-        SDL_LockRWLockForReading(m_gboy.control_rw_lock);
-        // Immediately exit if no longer running
-        if (m_gboy.running == false) { break; }
-        if (m_gboy.clock_speed == 0) {
-            // Light sleep and restart loop
-            SDL_UnlockRWLock(m_gboy.control_rw_lock);
+    log_info("Emulation Thread Starting");
+
+    while (SDL_GetAtomicInt(&m_gboy.running) == 1) {
+        // Should we be paused?
+        if (SDL_GetAtomicU32(&m_gboy.clock_speed) == 0) {
             SDL_WaitSemaphore(m_gboy.emulation_paused_sem);
-
-            // Double check if we should exit (prevents executing an additional step before
-            // exiting)
-            SDL_LockRWLockForReading(m_gboy.control_rw_lock);
-            if (m_gboy.running == false) { break; }
-            SDL_UnlockRWLock(m_gboy.control_rw_lock);
-        } else {
-            // Full sleep based on clock speed
-            Uint64 sleep_ns = 1000000000 / (Uint64)m_gboy.clock_speed;
-            SDL_UnlockRWLock(m_gboy.control_rw_lock);
-            SDL_DelayPrecise(sleep_ns);
+            // Force target to be now instead of some time in the past
+            target = SDL_GetPerformanceCounter();
         }
 
-        // Step GBoy
-        // 4 t cycles for every m cycle
+        // Check if clock speed has updated since last cached value
+        // Update increment if so
+        if (prev_clock_speed != SDL_GetAtomicU32(&m_gboy.clock_speed)) {
+            prev_clock_speed = SDL_GetAtomicU32(&m_gboy.clock_speed);
+            // tick_increment is meaningless if the clock speed is 0
+            if (prev_clock_speed != 0) {
+                tick_increment = SDL_GetPerformanceFrequency() / (Uint64)prev_clock_speed;
+                tick_remainder = SDL_GetPerformanceFrequency() % (Uint64)prev_clock_speed;
+                frac_accum     = 0;
+            }
+        }
+
+        // Get the current tick the step starts at
+        now = SDL_GetPerformanceCounter();
+        // Wait until taget is reached before continuing by reruning the above code
+        if (now < target) {
+            SDL_CPUPauseInstruction();
+            continue;
+        }
+
+        // Execute the step (1M to 4T cycles)
         m_cycle();
-        t_cycle();
-        t_cycle();
-        t_cycle();
-        t_cycle();
+        for (int i = 0; i < 4; i++) { t_cycle(); }
         debugger_update_slot_values();
+
+        // Update target based on cached clock speed
+        // This is where we also correct for drift (integer division loses accuracy)
+        // Note: This can be skipped if the clock speed is currently 0
+        if (prev_clock_speed != 0) {
+            target     += tick_increment;
+            frac_accum += tick_remainder;
+            if (frac_accum >= prev_clock_speed) {
+                frac_accum -= prev_clock_speed;
+                target++;
+            }
+        }
     }
-    SDL_UnlockRWLock(m_gboy.control_rw_lock);
+
+    log_info("Emulation Thread Stopping");
 
     return 0;
 }

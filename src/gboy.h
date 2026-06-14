@@ -21,10 +21,10 @@ void gboy_eject_cart(void);
 bool gboy_poweron(const size_t clock_speed);
 void gboy_poweroff(void);
 
-bool   gboy_step(void);
-bool   gboy_set_clock_speed(const size_t clock_speed);
-size_t gboy_get_clock_speed(void);
-bool   gboy_get_lcd(pixel_t* pixel_buffer, const size_t size);
+bool     gboy_step(void);
+bool     gboy_set_clock_speed(const uint32_t clock_speed);
+uint32_t gboy_get_clock_speed(void);
+bool     gboy_get_lcd(pixel_t* pixel_buffer, const size_t size);
 
 bool gboy_debugger_is_open(void);
 void gboy_debugger_open(void);
