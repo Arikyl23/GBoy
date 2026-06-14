@@ -8,6 +8,7 @@
 
 #include "display/pixel.h"
 #include "display/rect.h"
+#include "display/texture_scale_mode.h"
 #include "display/texture_type.h"
 
 // Opaque Decls
@@ -15,10 +16,11 @@ struct window;
 struct texture;
 
 struct texture* texture_create(
-    struct window*          window,
-    const size_t            width,
-    const size_t            height,
-    const enum texture_type type
+    struct window*                window,
+    const size_t                  width,
+    const size_t                  height,
+    const enum texture_type       type,
+    const enum texture_scale_mode scale_mode
 );
 void texture_destroy(struct texture** p_texture);
 

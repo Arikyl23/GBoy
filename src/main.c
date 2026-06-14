@@ -56,74 +56,6 @@ static void gboy_window_handle_button_input(const struct event_input_button* evt
             return;
         }
 
-        if (evt->button == KEYCODE_SPACE) {
-            // Play/Pause Emulation
-            if (evt->down == false || evt->repeat == true) { return; }
-            size_t current_clock_speed = gboy_get_clock_speed();
-            if (current_clock_speed == 0) {
-                gboy_set_clock_speed(cached_clock_speed);
-            } else {
-                gboy_set_clock_speed(0);
-                cached_clock_speed = current_clock_speed;
-            }
-            return;
-        }
-
-        // Step / Speed up emulation
-        if (evt->button == KEYCODE_RIGHT) {
-            // Only down events
-            if (evt->down == false) { return; }
-            size_t clock_speed = gboy_get_clock_speed();
-            // Is gboy paused?
-            if (clock_speed == 0) {
-                // Only step the first press
-                if (evt->repeat == true) { return; }
-                gboy_step();
-            } else {
-                gboy_set_clock_speed(clock_speed + 1);
-            }
-            return;
-        }
-
-        if (evt->button == KEYCODE_NUMPAD_0) {
-            // Run at 1 step/sec
-            if (evt->down == true && evt->repeat == false) { gboy_set_clock_speed(1); }
-            return;
-        }
-
-        if (evt->button == KEYCODE_NUMPAD_1) {
-            // Run at standard speed
-            if (evt->down == true && evt->repeat == false) {
-                gboy_set_clock_speed(GBOY_DEFAULT_CLOCK_SPEED);
-            }
-            return;
-        }
-
-        if (evt->button == KEYCODE_NUMPAD_2) {
-            // Run at half speed
-            if (evt->down == true && evt->repeat == false) {
-                gboy_set_clock_speed(GBOY_DEFAULT_CLOCK_SPEED / 2);
-            }
-            return;
-        }
-
-        if (evt->button == KEYCODE_NUMPAD_3) {
-            // Run at 1/3 speed
-            if (evt->down == true && evt->repeat == false) {
-                gboy_set_clock_speed(GBOY_DEFAULT_CLOCK_SPEED / 3);
-            }
-            return;
-        }
-
-        if (evt->button == KEYCODE_NUMPAD_4) {
-            // Run at quater speed
-            if (evt->down == true && evt->repeat == false) {
-                gboy_set_clock_speed(GBOY_DEFAULT_CLOCK_SPEED / 4);
-            }
-            return;
-        }
-
-        log_debug("Unhandled Keyboard Input Event");
         return;
     } else {
         log_debug("Unhandled Device Input");
@@ -183,9 +115,14 @@ static void update_frame(void) {
 }
 
 int main(void) {
-    m_gboy_window = window_create("GBoy", GBOY_LCD_WIDTH, GBOY_LCD_HEIGHT, 4);
-    m_gboy_pixel_texture =
-        texture_create(m_gboy_window, GBOY_LCD_WIDTH, GBOY_LCD_HEIGHT, TEXTURE_TYPE_STREAMING);
+    m_gboy_window        = window_create("GBoy", GBOY_LCD_WIDTH, GBOY_LCD_HEIGHT, 4);
+    m_gboy_pixel_texture = texture_create(
+        m_gboy_window,
+        GBOY_LCD_WIDTH,
+        GBOY_LCD_HEIGHT,
+        TEXTURE_TYPE_STREAMING,
+        TEXTURE_SCALEMODE_PIXELART
+    );
 
     // Setup event handlers
     event_register_application_event_handler(application_event_handler);

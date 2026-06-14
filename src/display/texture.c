@@ -28,10 +28,11 @@ struct texture {
 };
 
 struct texture* texture_create(
-    struct window*          window,
-    const size_t            width,
-    const size_t            height,
-    const enum texture_type type
+    struct window*                window,
+    const size_t                  width,
+    const size_t                  height,
+    const enum texture_type       type,
+    const enum texture_scale_mode scale_mode
 ) {
     struct texture* rtn = NULL;
 
@@ -55,6 +56,11 @@ struct texture* texture_create(
     );
     if (rtn->sdl_texture == NULL) {
         LOG_SDL_ERROR("SDL failed to create the texture");
+        goto err_cleanup;
+    }
+
+    if (SDL_SetTextureScaleMode(rtn->sdl_texture, (SDL_ScaleMode)scale_mode) == false) {
+        LOG_SDL_ERROR("SDL failed to set texture scale mode");
         goto err_cleanup;
     }
 
