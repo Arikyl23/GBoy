@@ -31,6 +31,7 @@ include(CMakeRC.cmake)
 cmrc_add_resource_library(Assets
     NAMESPACE GBoy
     ALIAS GBoy::Assets
+
     assets/fonts/JetBrainsMono-Regular.ttf
 )
 

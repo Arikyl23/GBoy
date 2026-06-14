@@ -13,6 +13,7 @@
 LOG_MODULE_SETUP("main", LOG_DEBUG);
 
 #define FONT_FILEPATH "assets/fonts/JetBrainsMono-Regular.ttf"
+#define ROM_FILEPATH  "01-special"
 
 static bool            m_active                      = true;
 static struct window*  m_gboy_window                 = NULL;
@@ -128,8 +129,9 @@ int main(void) {
     event_register_application_event_handler(application_event_handler);
     window_register_event_handler(m_gboy_window, gboy_window_event_handler);
 
-    // Enabled GBoy
-    gboy_poweron(0);
+    // Enable GBoy
+    if (gboy_load_cart(ROM_FILEPATH) == false) { goto err; }
+    if (gboy_poweron(0) == false) { goto err; }
     gboy_get_lcd(m_pixel_buffer, GBOY_LCD_SIZE);
     update_frame();
     gboy_debugger_open();
@@ -141,6 +143,7 @@ int main(void) {
         if (gboy_debugger_is_open() == true) { gboy_debugger_update(); }
     }
 
+err:
     // Cleanup
     if (gboy_debugger_is_open() == true) { gboy_debugger_close(); };
     gboy_poweroff();

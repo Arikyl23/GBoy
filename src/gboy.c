@@ -48,6 +48,8 @@ LOG_MODULE_SETUP("GBoy", CONFIG_GBOY_MODULE_LOG_LEVEL);
     } while (false);
 
 static struct {
+    struct cartridge* cart;
+
     // Control data
     SDL_RWLock* control_rw_lock;
     bool        running;
@@ -119,6 +121,36 @@ static void debugger_event_handler(const struct event* evt);
 static void debugger_window_event(const struct event_window* evt);
 static void debugger_input_event(const struct event_input* evt);
 static void debugger_button_input_event(const struct event_input_button* evt);
+
+bool gboy_load_cart(const char* path) {
+    int rc;
+
+    if (m_gboy.cart != NULL) {
+        log_warn("Cartridge is already loaded. Eject old one first.");
+        return false;
+    }
+
+    m_gboy.cart = cartridge_create(path);
+    if (m_gboy.cart == NULL) {
+        log_error("Failed to create cartridge object");
+        return false;
+    }
+
+    rc = mmu_load_cartridge(m_gboy.cart);
+    if (rc == -1) {
+        log_error("Bad cartridge. Couldn't load data.");
+        return false;
+    } else if (rc == -2) {
+        log_warn("Cartridge is already loaded. Eject old one first.");
+        return false;
+    }
+
+    return true;
+}
+void gboy_eject_cart(void) {
+    mmu_eject_cartridge();
+    cartridge_free(&m_gboy.cart);
+}
 
 bool gboy_poweron(const size_t clock_speed) {
     if (m_gboy.control_rw_lock != NULL) {

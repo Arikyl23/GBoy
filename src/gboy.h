@@ -16,6 +16,8 @@
 #define GBOY_LCD_HEIGHT 144
 #define GBOY_LCD_SIZE   (GBOY_LCD_WIDTH * GBOY_LCD_HEIGHT)
 
+bool gboy_load_cart(const char* path);
+void gboy_eject_cart(void);
 bool gboy_poweron(const size_t clock_speed);
 void gboy_poweroff(void);
 
