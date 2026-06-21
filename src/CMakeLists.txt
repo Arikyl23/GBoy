@@ -7,5 +7,6 @@ add_subdirectory(events)
 target_sources(GBoy_Internal
     INTERFACE
         gboy.c
+        debugger.c
 		assets.cpp
 )

@@ -1,5 +1,5 @@
 /**
- * @file colour.h
+ * @file colour_t.h
  * @brief Defines the RGB colours.
  */
 #pragma once

@@ -7,7 +7,7 @@
 #include <stdbool.h>
 
 #include "assets.h"
-#include "display/colour.h"
+#include "display/colour_t.h"
 #include "display/window.h"
 
 /** @brief Represents a collection of text that share a common font. */

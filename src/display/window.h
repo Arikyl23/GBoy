@@ -6,7 +6,7 @@
 
 #include <stddef.h>
 
-#include "display/colour.h"
+#include "display/colour_t.h"
 #include "display/rect.h"
 #include "events/event.h"
 

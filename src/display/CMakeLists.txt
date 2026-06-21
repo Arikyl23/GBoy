@@ -3,4 +3,5 @@ target_sources(GBoy_Internal
 		window.c
 		texture.c
 		textbox.c
+		renderer.c
 )

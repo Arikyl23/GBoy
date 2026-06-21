@@ -7,7 +7,7 @@
 #include <log.h>
 
 #include "DEFINES.h"
-#include "display/pixel.h"
+#include "display/pixel_t.h"
 #include "gboy_internal.h"
 #include "memory/hw_registers.h"
 #include "memory/mmu.h"
