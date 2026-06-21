@@ -8,7 +8,7 @@
 
 #include "DEFINES.h"
 #include "display/pixel_t.h"
-#include "gboy_internal.h"
+#include "lcd.h"
 #include "memory/hw_registers.h"
 #include "memory/mmu.h"
 #include "ppu/ppu_mode.h"
@@ -137,6 +137,9 @@ static void ppu_vblank(void) {
 
             m_ctx.ly_reg = 0;
             m_ctx.index  = (m_ctx.index + 1) % (sizeof(m_pallet) / sizeof(colour_t));
+
+            // Signal complete frame
+            lcd_frame_complete();
         }
     }
 }
@@ -157,7 +160,7 @@ static void ppu_draw(void) {
 
     // TODO: Implement Draw Logic
 
-    gboy_set_lcd_pixel(lx, m_ctx.ly_reg, m_pallet[m_ctx.index]);
+    lcd_write_pixel(&m_pallet[m_ctx.index], lx, m_ctx.ly_reg);
 
     // Increment lx and dot_count. Check for HBlank start
     lx++;

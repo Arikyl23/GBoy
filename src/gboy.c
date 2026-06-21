@@ -15,6 +15,7 @@
 #include "display/renderer.h"
 #include "display/texture.h"
 #include "display/window.h"
+#include "lcd.h"
 #include "memory/mmu.h"
 #include "ppu/ppu.h"
 
@@ -22,10 +23,6 @@ LOG_MODULE_SETUP("GBoy", CONFIG_GBOY_MODULE_LOG_LEVEL);
 
 #define GBOY_WINDOW_TITLE "GBoy"
 #define GBOY_WINDOW_SCALE 4
-
-#define GBOY_LCD_WIDTH  160
-#define GBOY_LCD_HEIGHT 144
-#define GBOY_LCD_SIZE   (GBOY_LCD_WIDTH * GBOY_LCD_HEIGHT)
 
 #define GBOY_EMULATION_THREAD_NAME "emulation"
 
@@ -42,14 +39,11 @@ static struct {
     SDL_Thread*    emulation_thread;
     SDL_Semaphore* emulation_paused_sem;
 
-    // LCD Data
-    SDL_RWLock* lcd_rw_lock;
-    pixel_t     lcd[GBOY_LCD_SIZE];
-
     // Window Data
     struct window*       window;
     struct texture*      pixel_texture;
     renderer_cb_handle_t renderer_handle;
+    lcd_frame_t*         current_frame;
 } m_ctx = {
     .init = false,
 };
@@ -89,6 +83,11 @@ bool gboy_init(void) {
 
     log_info("Initializing GBoy...");
 
+    if (lcd_init() == false) {
+        log_error("Failed to initialize LCD");
+        return false;
+    }
+
     m_ctx.cart = NULL;
 
     SDL_SetAtomicInt(&m_ctx.running, false);
@@ -101,23 +100,15 @@ bool gboy_init(void) {
         goto cleanup;
     }
 
-    m_ctx.lcd_rw_lock = SDL_CreateRWLock();
-    if (m_ctx.lcd_rw_lock == NULL) {
-        LOG_SDL_ERROR("Failed to create LCD RWLock");
-        goto cleanup;
-    }
-    SDL_memset(m_ctx.lcd, 0, sizeof(m_ctx.lcd));
-
-    m_ctx.window =
-        window_create(GBOY_WINDOW_TITLE, GBOY_LCD_WIDTH, GBOY_LCD_HEIGHT, GBOY_WINDOW_SCALE);
+    m_ctx.window = window_create(GBOY_WINDOW_TITLE, LCD_WIDTH, LCD_HEIGHT, GBOY_WINDOW_SCALE);
     if (m_ctx.window == NULL) {
         log_error("Failed to create Window");
         goto cleanup;
     }
     m_ctx.pixel_texture = texture_create(
         m_ctx.window,
-        GBOY_LCD_WIDTH,
-        GBOY_LCD_HEIGHT,
+        LCD_WIDTH,
+        LCD_HEIGHT,
         TEXTURE_TYPE_STREAMING,
         TEXTURE_SCALEMODE_PIXELART
     );
@@ -141,10 +132,6 @@ cleanup:
         SDL_DestroySemaphore(m_ctx.emulation_paused_sem);
         m_ctx.emulation_paused_sem = NULL;
     }
-    if (m_ctx.lcd_rw_lock != NULL) {
-        SDL_DestroyRWLock(m_ctx.lcd_rw_lock);
-        m_ctx.lcd_rw_lock = NULL;
-    }
     renderer_deregister_render_cb(m_ctx.renderer_handle);
     texture_destroy(&m_ctx.pixel_texture);
     window_destroy(&m_ctx.window);
@@ -166,9 +153,6 @@ void gboy_cleanup(void) {
     gboy_eject_cart();
 
     // TODO: Reset CPU state? Either here or during init
-
-    SDL_DestroyRWLock(m_ctx.lcd_rw_lock);
-    m_ctx.lcd_rw_lock = NULL;
 
     renderer_deregister_render_cb(m_ctx.renderer_handle);
     texture_destroy(&m_ctx.pixel_texture);
@@ -320,65 +304,6 @@ uint32_t gboy_get_clock_speed(void) {
     return SDL_GetAtomicU32(&m_ctx.clock_speed);
 }
 
-bool gboy_get_lcd(pixel_t* pixel_buffer, const size_t size) {
-    INIT_CHECK();
-
-    if (pixel_buffer == NULL) {
-        log_error("No pixel buffer to work on.");
-        return false;
-    }
-    if (size != GBOY_LCD_SIZE) {
-        log_error(
-            "Invalid sized pixel buffer. Buffer must be %zux%zu or %zu",
-            GBOY_LCD_WIDTH,
-            GBOY_LCD_HEIGHT,
-            GBOY_LCD_SIZE
-        );
-        return false;
-    }
-
-    if (SDL_GetAtomicInt(&m_ctx.running) == false) {
-        log_debug("GBoy is powered off. Returning blank (black) frame");
-        for (size_t i = 0; i < GBOY_LCD_SIZE; i++) { pixel_buffer[i] = (pixel_t){0, 0, 0, 255}; }
-        return true;
-    } else {
-        SDL_LockRWLockForReading(m_ctx.lcd_rw_lock);
-        SDL_memcpy(pixel_buffer, m_ctx.lcd, sizeof(m_ctx.lcd));
-        SDL_UnlockRWLock(m_ctx.lcd_rw_lock);
-        return true;
-    }
-}
-
-bool gboy_set_lcd_pixel(const size_t x, const size_t y, const pixel_t pixel) {
-    INIT_CHECK();
-
-    if (x >= GBOY_LCD_WIDTH || y >= GBOY_LCD_HEIGHT) {
-        log_warn(
-            "Attempted to set a pixel outside the physical LCD boundaries. Ignored "
-            "request.\n"
-            "\tx: %zu | Width: %zu\n"
-            "\ty: %zu | Height: %zu",
-            x,
-            GBOY_LCD_WIDTH,
-            y,
-            GBOY_LCD_HEIGHT
-        );
-        return false;
-    }
-
-    if (SDL_GetAtomicInt(&m_ctx.running) == false) {
-        log_error("Managed to call set lcd pixel while gameboy is powered off!?");
-        return false;
-    }
-
-    size_t index = y * GBOY_LCD_WIDTH + x;
-    SDL_LockRWLockForWriting(m_ctx.lcd_rw_lock);
-    m_ctx.lcd[index] = pixel;
-    SDL_UnlockRWLock(m_ctx.lcd_rw_lock);
-
-    return true;
-}
-
 static int emulation_loop(void* arg) {
     Uint32 prev_clock_speed = SDL_GetAtomicU32(&m_ctx.clock_speed);
     Uint64 target           = SDL_GetPerformanceCounter();
@@ -463,14 +388,16 @@ static void t_cycle(void) {
 }
 
 static void window_update(void) {
-    static pixel_t frame_data[GBOY_LCD_SIZE];
+    lcd_frame_t* next_frame = lcd_request_draw_buffer();
 
-    window_clear(m_ctx.window);
-
-    gboy_get_lcd(frame_data, GBOY_LCD_SIZE);
-    texture_update(m_ctx.pixel_texture, frame_data, GBOY_LCD_SIZE);
-    texture_draw(m_ctx.window, m_ctx.pixel_texture);
-    window_present(m_ctx.window);
+    // Only draw a new frame if the next frame is not a stale frame
+    if (m_ctx.current_frame != next_frame || gboy_get_clock_speed() < 100000) {
+        window_clear(m_ctx.window);
+        texture_update(m_ctx.pixel_texture, *next_frame, ARRAY_SIZEOF(*next_frame));
+        texture_draw(m_ctx.window, m_ctx.pixel_texture);
+        window_present(m_ctx.window);
+        m_ctx.current_frame = next_frame;
+    }
 }
 
 static void window_event_handler(const struct event* evt) {

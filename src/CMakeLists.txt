@@ -9,4 +9,5 @@ target_sources(GBoy_Internal
         gboy.c
         debugger.c
 		assets.cpp
+        lcd.c
 )
