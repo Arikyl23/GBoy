@@ -18,6 +18,7 @@
 #include "lcd.h"
 #include "memory/mmu.h"
 #include "ppu/ppu.h"
+#include "utility/macros.h"
 
 LOG_MODULE_SETUP("GBoy", CONFIG_GBOY_MODULE_LOG_LEVEL);
 
@@ -393,7 +394,7 @@ static void window_update(void) {
     // Only draw a new frame if the next frame is not a stale frame
     if (m_ctx.current_frame != next_frame || gboy_get_clock_speed() < 100000) {
         window_clear(m_ctx.window);
-        texture_update(m_ctx.pixel_texture, *next_frame, ARRAY_SIZEOF(*next_frame));
+        texture_update(m_ctx.pixel_texture, *next_frame, GB_ARRAY_SIZEOF(*next_frame));
         texture_draw(m_ctx.window, m_ctx.pixel_texture);
         window_present(m_ctx.window);
         m_ctx.current_frame = next_frame;

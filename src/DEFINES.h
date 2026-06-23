@@ -9,5 +9,3 @@ typedef uint32_t dword;
 typedef int8_t  s_byte;
 typedef int16_t s_word;
 typedef int32_t s_dword;
-
-#define ARRAY_SIZEOF(arr) (sizeof(arr) / sizeof(arr[0]))
