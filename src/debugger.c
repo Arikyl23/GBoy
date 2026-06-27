@@ -1036,7 +1036,7 @@ static void button_input_event(const struct event_input_button* evt) {
         // Run at standard speed / 1 step/s
         if (evt->button == KEYCODE_1) {
             // Only capture first press
-            if (evt->down == false && evt->repeat == true) { return; }
+            if (evt->down == false || evt->repeat == true) { return; }
 
             if (evt->modifier == KEYCODE_MODIFER_LSHIFT) {
                 // If LSHIFT modifier, run at 1 step/s
@@ -1045,8 +1045,8 @@ static void button_input_event(const struct event_input_button* evt) {
                 // Else run at standard speed
                 gboy_set_clock_speed(GBOY_DEFAULT_CLOCK_SPEED);
             }
+            return;
         }
-        return;
 
         // Run at half speed
         if (evt->button == KEYCODE_2) {

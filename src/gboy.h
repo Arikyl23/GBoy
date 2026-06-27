@@ -56,20 +56,20 @@ bool gboy_eject_cart(void);
  *
  * @returns true - OK; false - FAIL.
  */
-bool     gboy_step(void);
+bool   gboy_step(void);
 /**
  * @brief Sets the clock speed of GBoy.
  *
  * @param clock_speed New clock speed to set.
  * @returns true - OK; false - FAIL.
  */
-bool     gboy_set_clock_speed(const uint32_t clock_speed);
+bool   gboy_set_clock_speed(const size_t clock_speed);
 /**
  * @brief Gets the currently set clock speed.
  *
  * @returns Current GBoy clock speed.
  */
-uint32_t gboy_get_clock_speed(void);
+size_t gboy_get_clock_speed(void);
 /**
  * @brief Fetches a copy of the internal LCD data.
  *
@@ -77,4 +77,4 @@ uint32_t gboy_get_clock_speed(void);
  * @param size Size of `pixel_buffer`. This must match the expected size of the LCD.
  * @returns true - OK; false - FAIL.
  */
-bool     gboy_get_lcd(pixel_t* pixel_buffer, const size_t size);
+bool   gboy_get_lcd(pixel_t* pixel_buffer, const size_t size);

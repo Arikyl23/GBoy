@@ -32,13 +32,13 @@ static struct {
 
     struct cartridge* cart;
 
-    // Control data
-    SDL_AtomicInt running;
-    SDL_AtomicU32 clock_speed;
-
     // Emulation Thread Data
     SDL_Thread*    emulation_thread;
-    SDL_Semaphore* emulation_paused_sem;
+    bool           emulation_thread_active;
+    size_t         clock_speed;
+    size_t         pending_steps;
+    SDL_Mutex*     emulation_mutex;
+    SDL_Condition* emulation_step_condition;
 
     // Window Data
     struct window*       window;
@@ -91,14 +91,18 @@ bool gboy_init(void) {
 
     m_ctx.cart = NULL;
 
-    SDL_SetAtomicInt(&m_ctx.running, false);
-    SDL_SetAtomicU32(&m_ctx.clock_speed, 0);
+    m_ctx.emulation_thread_active = false;
+    m_ctx.clock_speed             = 0;
 
-    m_ctx.emulation_thread     = NULL;
-    m_ctx.emulation_paused_sem = SDL_CreateSemaphore(0);
-    if (m_ctx.emulation_paused_sem == NULL) {
-        LOG_SDL_ERROR("Failed to create Emulation thread paused Semaphore");
+    m_ctx.emulation_thread = NULL;
+    m_ctx.emulation_mutex  = SDL_CreateMutex();
+    if (m_ctx.emulation_mutex == NULL) {
+        LOG_SDL_ERROR("Failed to create emulation step Mutex");
         goto cleanup;
+    }
+    m_ctx.emulation_step_condition = SDL_CreateCondition();
+    if (m_ctx.emulation_step_condition == NULL) {
+        LOG_SDL_ERROR("Failed to create emulation step Condition Variable");
     }
 
     m_ctx.window = window_create(GBOY_WINDOW_TITLE, LCD_WIDTH, LCD_HEIGHT, GBOY_WINDOW_SCALE);
@@ -129,13 +133,11 @@ bool gboy_init(void) {
     return true;
 
 cleanup:
-    if (m_ctx.emulation_paused_sem != NULL) {
-        SDL_DestroySemaphore(m_ctx.emulation_paused_sem);
-        m_ctx.emulation_paused_sem = NULL;
-    }
     renderer_deregister_render_cb(m_ctx.renderer_handle);
     texture_destroy(&m_ctx.pixel_texture);
     window_destroy(&m_ctx.window);
+    SDL_DestroyCondition(m_ctx.emulation_step_condition);
+    SDL_DestroyMutex(m_ctx.emulation_mutex);
 
     return false;
 }
@@ -145,9 +147,7 @@ void gboy_cleanup(void) {
 
     if (debugger_is_open() == true) { debugger_close(); }
 
-    if (SDL_GetAtomicInt(&m_ctx.running) == true) { gboy_poweroff(); }
-    SDL_DestroySemaphore(m_ctx.emulation_paused_sem);
-    m_ctx.emulation_paused_sem = NULL;
+    gboy_poweroff();
 
     // TODO: Handle Cartridges correctly. Whether that means saving the RAM data to a file or
     // TODO: however we decide to handle it.
@@ -158,6 +158,8 @@ void gboy_cleanup(void) {
     renderer_deregister_render_cb(m_ctx.renderer_handle);
     texture_destroy(&m_ctx.pixel_texture);
     window_destroy(&m_ctx.window);
+    SDL_DestroyCondition(m_ctx.emulation_step_condition);
+    SDL_DestroyMutex(m_ctx.emulation_mutex);
 
     m_ctx.init = false;
 
@@ -169,24 +171,22 @@ void gboy_cleanup(void) {
 bool gboy_poweron(const size_t clock_speed) {
     INIT_CHECK();
 
-    if (SDL_GetAtomicInt(&m_ctx.running) == true) {
+    SDL_LockMutex(m_ctx.emulation_mutex);
+    if (m_ctx.emulation_thread_active == true) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
         log_warn("GBoy is already running. Call gboy_poweroff() first.");
         return false;
     }
 
     renderer_enable_cb(m_ctx.renderer_handle, true);
-    SDL_SetAtomicU32(&m_ctx.clock_speed, clock_speed);
+    m_ctx.clock_speed = clock_speed;
 
-    // Drain Semaphore (catch for it the semaphore somehow had a value larger than zero)
-    while (SDL_TryWaitSemaphore(m_ctx.emulation_paused_sem));
-    SDL_SetAtomicInt(&m_ctx.running, true);
-    //! This must come after running is set to true
-    //! If this thread gets preempted by the newly created thread before running is set, it will
-    //! prematurely exit before we get the change to set running
+    // Start thread
     m_ctx.emulation_thread = SDL_CreateThread(emulation_loop, GBOY_EMULATION_THREAD_NAME, NULL);
+    m_ctx.emulation_thread_active = (m_ctx.emulation_thread != NULL);
+    SDL_UnlockMutex(m_ctx.emulation_mutex);
     if (m_ctx.emulation_thread == NULL) {
         LOG_SDL_ERROR("Could not power on GBoy. SDL failed to create emulation thread.");
-        SDL_SetAtomicInt(&m_ctx.running, false);
         return false;
     }
 
@@ -196,14 +196,21 @@ bool gboy_poweron(const size_t clock_speed) {
 bool gboy_poweroff(void) {
     INIT_CHECK();
 
-    if (SDL_GetAtomicInt(&m_ctx.running) == false) {
+    SDL_LockMutex(m_ctx.emulation_mutex);
+    if (m_ctx.emulation_thread_active == false) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
         log_warn("Gboy is already powered off.");
         return true;
     }
 
+    // If currently paused, force GBoy to take a step so it notices the exit flag
+    if (m_ctx.clock_speed == 0) { gboy_step(); }
+    m_ctx.emulation_thread_active = false;
     renderer_enable_cb(m_ctx.renderer_handle, false);
-    SDL_SetAtomicInt(&m_ctx.running, false);
-    SDL_SignalSemaphore(m_ctx.emulation_paused_sem);
+    SDL_UnlockMutex(m_ctx.emulation_mutex);
+
+    // By this point, emulation thread will be dispatched and see the false active flag
+    // Safe to wait for exit
     SDL_WaitThread(m_ctx.emulation_thread, NULL);
     m_ctx.emulation_thread = NULL;
 
@@ -255,84 +262,112 @@ bool gboy_eject_cart(void) {
 bool gboy_step(void) {
     INIT_CHECK();
 
-    if (SDL_GetAtomicInt(&m_ctx.running) == false) {
+    // Thread may be mid-flight
+    SDL_LockMutex(m_ctx.emulation_mutex);
+
+    if (m_ctx.emulation_thread_active == false) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
         log_warn("GBoy is powered off. Cannot step the emulation.");
         return false;
     }
 
-    if (SDL_GetAtomicU32(&m_ctx.clock_speed) != 0) {
+    if (m_ctx.clock_speed != 0) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
         log_warn("GBoy clock speed is non-zero. Cannot step the emulation.");
         return false;
     }
 
-    SDL_SignalSemaphore(m_ctx.emulation_paused_sem);
+    // If we have the mutex and clock speed is 0, there is only two possible spots the emulation
+    // thread can be:
+    // - Blocked on the condition waiting for the signal to startup
+    // - Exited the critical section and potentially waiting for next cycle (thread wait time should
+    //   be instant since clock speed is 0).
+    //   If this is the case, thread may legitamately miss the step signal so the pending steps
+    //   variable accounts for this
+    m_ctx.pending_steps++;
+    SDL_SignalCondition(m_ctx.emulation_step_condition);
+    SDL_UnlockMutex(m_ctx.emulation_mutex);
 
     return true;
 }
 
-bool gboy_set_clock_speed(const uint32_t clock_speed) {
+bool gboy_set_clock_speed(const size_t clock_speed) {
     INIT_CHECK();
 
-    if (SDL_GetAtomicInt(&m_ctx.running) == false) {
+    SDL_LockMutex(m_ctx.emulation_mutex);
+    if (m_ctx.emulation_thread_active == false) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
         log_warn("GBoy is powered off. Cannot step the emulation.");
         return false;
     }
 
-    SDL_SetAtomicU32(&m_ctx.clock_speed, clock_speed);
-
-    if (clock_speed == 0) {
-        // User is attempting to pause the emulated, ensure pause semaphore is empty by draining it
-        while (SDL_TryWaitSemaphore(m_ctx.emulation_paused_sem));
-    } else if (SDL_GetSemaphoreValue(m_ctx.emulation_paused_sem) == 0) {
-        // User is either unpausing or changing emulation speed. Ensure pause is exited.
-        //* Since we always drain the semaphore on pause, this is safe.
-        SDL_SignalSemaphore(m_ctx.emulation_paused_sem);
-    }
+    // If currently paused, force a step so emulation thread sees the updated clock speed
+    if (m_ctx.clock_speed == 0) { gboy_step(); }
+    m_ctx.clock_speed = clock_speed;
+    SDL_UnlockMutex(m_ctx.emulation_mutex);
 
     return true;
 }
 
-uint32_t gboy_get_clock_speed(void) {
+size_t gboy_get_clock_speed(void) {
     //* This line returns `false` which is technically #define 0. This aligns with the
     //* expected fail value of 0.
     INIT_CHECK();
 
-    if (SDL_GetAtomicInt(&m_ctx.running) == false) {
+    SDL_LockMutex(m_ctx.emulation_mutex);
+    if (m_ctx.emulation_thread_active == false) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
         log_warn("GBoy is powered off. Returning clock speed of 0");
         return 0;
     }
+    size_t clock_speed = m_ctx.clock_speed;
+    SDL_UnlockMutex(m_ctx.emulation_mutex);
 
-    return SDL_GetAtomicU32(&m_ctx.clock_speed);
+    return clock_speed;
 }
 
 static int emulation_loop(void* arg) {
-    Uint32 prev_clock_speed = SDL_GetAtomicU32(&m_ctx.clock_speed);
+    Uint32 prev_clock_speed = 0;
     Uint64 target           = SDL_GetPerformanceCounter();
-    Uint64 now;
-    Uint64 tick_increment =
-        (prev_clock_speed == 0) ? 0 : SDL_GetPerformanceFrequency() / (Uint64)prev_clock_speed;
-    Uint64 tick_remainder =
-        (prev_clock_speed == 0) ? 0 : SDL_GetPerformanceFrequency() % (Uint64)prev_clock_speed;
-    Uint64 frac_accum = 0;
+    Uint64 tick_increment   = 0;
+    Uint64 tick_remainder   = 0;
+    Uint64 frac_accum       = 0;
 
     log_info("Emulation Thread Starting");
 
     while (true) {
+        //! ------ CRITICAL ZONE START ------
+        SDL_LockMutex(m_ctx.emulation_mutex);
+
         // Should we be paused?
-        if (SDL_GetAtomicU32(&m_ctx.clock_speed) == 0) {
-            SDL_WaitSemaphore(m_ctx.emulation_paused_sem);
+        if (m_ctx.clock_speed == 0) {
+            // Only pause when all pending steps are consumed
+            // Wait until step signal is given (Unlocks mutex during wait and relocks upon
+            // wakeup)
+            while (m_ctx.pending_steps == 0) {
+                SDL_WaitCondition(m_ctx.emulation_step_condition, m_ctx.emulation_mutex);
+            }
+            m_ctx.pending_steps--;
             // Force target to be now instead of some point in the past
             target = SDL_GetPerformanceCounter();
         }
 
         // Always check this before doing anything. Allows thread to kick out independent of whether
         // the thread is currently spinning or just woke up from being paused
-        if (SDL_GetAtomicInt(&m_ctx.running) == false) { break; }
+        if (m_ctx.emulation_thread_active == false) {
+            SDL_UnlockMutex(m_ctx.emulation_mutex);
+            break;
+        }
+
+        // Execute the step (1M to 4T cycles)
+        m_cycle();
+        for (int i = 0; i < 4; i++) { t_cycle(); }
+        debugger_update_slot_values();
 
         // Check if clock speed has updated since last cached value
         // Update increment if so
-        if (prev_clock_speed != SDL_GetAtomicU32(&m_ctx.clock_speed)) {
-            prev_clock_speed = SDL_GetAtomicU32(&m_ctx.clock_speed);
+        if (prev_clock_speed != m_ctx.clock_speed) {
+            prev_clock_speed = m_ctx.clock_speed;
             // tick_increment is meaningless if the clock speed is 0
             if (prev_clock_speed != 0) {
                 tick_increment = SDL_GetPerformanceFrequency() / (Uint64)prev_clock_speed;
@@ -341,18 +376,8 @@ static int emulation_loop(void* arg) {
             }
         }
 
-        // Get the current tick the step starts at
-        now = SDL_GetPerformanceCounter();
-        // Wait until taget is reached before continuing by reruning the above code
-        if (now < target) {
-            SDL_CPUPauseInstruction();
-            continue;
-        }
-
-        // Execute the step (1M to 4T cycles)
-        m_cycle();
-        for (int i = 0; i < 4; i++) { t_cycle(); }
-        debugger_update_slot_values();
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
+        //! ------ CRITICAL ZONE END ------
 
         // Update target based on cached clock speed
         // This is where we also correct for drift (integer division loses accuracy)
@@ -365,6 +390,9 @@ static int emulation_loop(void* arg) {
                 target++;
             }
         }
+
+        // Busy Loop while waiting for the next cycle
+        while (SDL_GetPerformanceCounter() < target) { SDL_CPUPauseInstruction(); }
     }
 
     log_info("Emulation Thread Stopping");
