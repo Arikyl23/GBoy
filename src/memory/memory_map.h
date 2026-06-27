@@ -33,6 +33,10 @@
 #define ADDR_CART_ROM_HIGH_END   0x7FFF /** @brief Cartridge ROM high bank end */
 #define ADDR_CART_ROM_END        0x7FFF /** @brief Cartridge ROM end */
 #define ADDR_VRAM_START          0x8000 /** @brief Internal Video RAM start */
+#define ADDR_VRAM_TILEDATA_1     0x8000 /** @brief Unsigned Tile Data base */
+#define ADDR_VRAM_TILEDATA_0     0x9000 /** @brief Signed Tile Data base */
+#define ADDR_VRAM_TILEMAP_0      0x9800 /** @brief Default Tilemap base */
+#define ADDR_VRAM_TILEMAP_1      0x9C00 /** @brief Alternative Tilemap base */
 #define ADDR_VRAM_END            0x9FFF /** @brief Internal Video RAM end */
 #define ADDR_CART_RAM_START      0xA000 /** @brief Cartridge RAM start */
 #define ADDR_CART_RAM_END        0xBFFF /** @brief Cartridge RAM end */
