@@ -87,7 +87,7 @@ struct fifo {
     GB_FIFO_STATIC_DECL(name, size) = GB_FIFO_INITIALIZER(name)
 
 /** @brief Resets a FIFO clearing all data currently stored. */
-inline void fifo_reset(struct fifo* fifo) {
+static inline void fifo_reset(struct fifo* fifo) {
     if (fifo == NULL) { return; }
 
     fifo->p_read  = fifo->p_buffer;
@@ -96,25 +96,25 @@ inline void fifo_reset(struct fifo* fifo) {
 }
 
 /** @brief Checks if the FIFO is full. */
-inline bool fifo_is_full(const struct fifo* fifo) {
+static inline bool fifo_is_full(const struct fifo* fifo) {
     if (fifo == NULL) { return false; }
     return fifo->count == fifo->capacity;
 }
 
 /** @brief Checks if the FIFO is empty. */
-inline bool fifo_is_empty(const struct fifo* fifo) {
+static inline bool fifo_is_empty(const struct fifo* fifo) {
     if (fifo == NULL) { return false; }
     return fifo->count == 0;
 }
 
 /** @brief Gets the Capacity of the FIFO. */
-inline size_t fifo_capacity(const struct fifo* fifo) {
+static inline size_t fifo_capacity(const struct fifo* fifo) {
     if (fifo == NULL) { return 0; }
     return fifo->capacity;
 }
 
 /** @brief Gets the number of used bytes in the FIFO. */
-inline size_t fifo_count(const struct fifo* fifo) {
+static inline size_t fifo_count(const struct fifo* fifo) {
     if (fifo == NULL) { return 0; }
     return fifo->count;
 }
