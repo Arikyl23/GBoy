@@ -4,6 +4,11 @@
  */
 #pragma once
 
-#include "display/pixel.h"
+#include <stdbool.h>
 
-void gboy_set_lcd_pixel(const size_t x, const size_t y, const pixel_t pixel);
+#include "display/pixel_t.h"
+
+// Based on 4.194304 MHz clock speed (*1000^2 / 4)
+#define GBOY_DEFAULT_CLOCK_SPEED 1048576
+
+bool gboy_set_lcd_pixel(const size_t x, const size_t y, const pixel_t pixel);

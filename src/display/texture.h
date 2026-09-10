@@ -6,7 +6,7 @@
 
 #include <stddef.h>
 
-#include "display/pixel.h"
+#include "display/pixel_t.h"
 #include "display/rect.h"
 #include "display/texture_scale_mode.h"
 #include "display/texture_type.h"

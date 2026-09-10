@@ -44,7 +44,7 @@ void event_deregister_application_event_handler(void) { m_application_event_hand
 void event_poll(void) {
     // SDL_PollEvent() cannot be called if there are no active window instances. There is no point
     // in calling it if there is no currently registered windows.
-    if (m_registered_windows == 0) { return; }
+    // if (m_registered_windows == 0) { return; }
 
     SDL_Event sdl_evt = {0};
     while (SDL_PollEvent(&sdl_evt) == true) {
