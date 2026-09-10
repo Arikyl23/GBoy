@@ -1,6 +1,6 @@
 # Vendored Libraries
 
-This directory is responsible for housing all external library source. If we didn't write it ourselves, it should go here.
+This directory houses all external library source. If we didn't write it ourselves, it should go here.
 
 ## List Of Vendored Libraries
 
@@ -24,7 +24,8 @@ Log.c is a simple and lightweight logging library written in C99.
 Note that some changes to the source have been made. In particular:
 
 - Truncated the file trace to be relative to the projects root directory. This is to make reading the logs a bit easier while removing most of the bloat.
-- Added modularization to the logs allowing each file to define it's own logging level. Multiple files can claim to be in the same module by using a common CONFIG logging level.
+- Added modularization to the logs allowing each file to define it's own logging level and name. Multiple files can claim to be the same module by setting the same logging name.
+- Changed the logging format to be `TIME LEVEL [MODULE] FILE:LINE` 
 
 ### Simple DirectMedia Layer (SDL)
 

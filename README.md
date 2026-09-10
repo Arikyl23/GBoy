@@ -34,7 +34,7 @@ git submodule update --init --recursive
 
 Currently, a CMake build system is in use. It will automatically configure the project to correctly build and link SDL3 and additional libraries. The CMake still leaves a lot to be desired and I still have a lot to learn in regards to it.
 
-I have written a script to wrap the CMake build system greatly simplifing the build process. It can be located inside of the tools folder. This script is safe to run from anywhere as it operates off its own location instead of the terminals.
+I have written a script to wrap the CMake build system greatly simplifing the build process. It can be located inside of the tools folder. This script is safe to run from anywhere as it operates off its own location instead of the terminal's working directory.
 
 ### Buildtools Script
 
@@ -72,7 +72,7 @@ buildtools.sh clean release
 # Compiles the project with the RELEASE configuration
 buildtools.sh build debug
 
-# Tests the currently build ASAN configuration with CTest
+# Tests the currently built ASAN configuration with CTest
 buildtools.sh test asan
 ```
 
@@ -91,7 +91,7 @@ buildtools.sh clean
 # In this case, it is purging the DEBUG build folder
 buildtools.sh clean debug
 
-# This performs the previous command before building a debug build
+# This performs the previous command (cleaning debug build files) before building a debug build
 # This is the easiest and most robust way to handle clean building
 buildtools.sh build --clean
 ```
