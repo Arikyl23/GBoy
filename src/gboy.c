@@ -1,0 +1,493 @@
+/**
+ * @file gboy.c
+ * @brief Implementation for GBoy.
+ */
+#include "gboy.h"
+
+#include <SDL3/SDL.h>
+#include <log.h>
+
+#include "DEFINES.h"
+#include "assets.h"
+#include "cpu/cpu.h"
+#include "debugger.h"
+#include "debugger_internal.h"
+#include "display/renderer.h"
+#include "display/texture.h"
+#include "display/window.h"
+#include "lcd.h"
+#include "memory/mmu.h"
+#include "ppu/ppu.h"
+#include "utility/macros.h"
+
+LOG_MODULE_SETUP("GBoy", CONFIG_GBOY_MODULE_LOG_LEVEL);
+
+#define GBOY_WINDOW_TITLE "GBoy"
+#define GBOY_WINDOW_SCALE 4
+
+#define GBOY_EMULATION_THREAD_NAME "emulation"
+
+static struct {
+    bool init;
+
+    struct cartridge* cart;
+
+    // Emulation Thread Data
+    SDL_Thread*    emulation_thread;
+    bool           emulation_thread_active;
+    size_t         clock_speed;
+    size_t         pending_steps;
+    SDL_Mutex*     emulation_mutex;
+    SDL_Condition* emulation_step_condition;
+
+    // Window Data
+    struct window*       window;
+    struct texture*      pixel_texture;
+    renderer_cb_handle_t renderer_handle;
+    lcd_frame_t*         current_frame;
+} m_ctx = {
+    .init = false,
+};
+
+/**
+ * @brief Initialization Guard. Immediately logs an error and returns if GBoy is not initialized.
+ */
+#define INIT_CHECK()                                                                               \
+    do {                                                                                           \
+        if (m_ctx.init == false) {                                                                 \
+            log_error("GBoy is not initialized yet.");                                             \
+            return false;                                                                          \
+        }                                                                                          \
+    } while (false);
+
+/**
+ * @brief Macro for quickly logging a formatted SDL error.
+ */
+#define LOG_SDL_ERROR(msg)                                                                         \
+    do {                                                                                           \
+        log_error("SDL Error: " msg "\n\tReason: %s", SDL_GetError());                             \
+        SDL_ClearError();                                                                          \
+    } while (false);
+
+static int  emulation_loop(void* arg);
+static void m_cycle(void);
+static void t_cycle(void);
+static void window_update(void);
+static void window_event_handler(const struct event* evt);
+static void window_handle_input(const struct event_input* evt);
+
+bool gboy_init(void) {
+    if (m_ctx.init == true) {
+        log_warn("GBoy is already initialized");
+        return false;
+    }
+
+    log_info("Initializing GBoy...");
+
+    if (lcd_init() == false) {
+        log_error("Failed to initialize LCD");
+        return false;
+    }
+
+    m_ctx.cart = NULL;
+
+    m_ctx.emulation_thread_active = false;
+    m_ctx.clock_speed             = 0;
+
+    m_ctx.emulation_thread = NULL;
+    m_ctx.emulation_mutex  = SDL_CreateMutex();
+    if (m_ctx.emulation_mutex == NULL) {
+        LOG_SDL_ERROR("Failed to create emulation step Mutex");
+        goto cleanup;
+    }
+    m_ctx.emulation_step_condition = SDL_CreateCondition();
+    if (m_ctx.emulation_step_condition == NULL) {
+        LOG_SDL_ERROR("Failed to create emulation step Condition Variable");
+    }
+
+    m_ctx.window = window_create(GBOY_WINDOW_TITLE, LCD_WIDTH, LCD_HEIGHT, GBOY_WINDOW_SCALE);
+    if (m_ctx.window == NULL) {
+        log_error("Failed to create Window");
+        goto cleanup;
+    }
+    m_ctx.pixel_texture = texture_create(
+        m_ctx.window,
+        LCD_WIDTH,
+        LCD_HEIGHT,
+        TEXTURE_TYPE_STREAMING,
+        TEXTURE_SCALEMODE_PIXELART
+    );
+    if (m_ctx.pixel_texture == NULL) {
+        log_error("Failed to create window pixel texture");
+        goto cleanup;
+    }
+    m_ctx.renderer_handle = renderer_register_render_cb(window_update);
+    if (m_ctx.renderer_handle < 0) {
+        log_error("Failed to register renderer callback");
+        goto cleanup;
+    }
+    window_register_event_handler(m_ctx.window, window_event_handler);
+
+    m_ctx.init = true;
+    log_info("GBoy Initialized");
+    return true;
+
+cleanup:
+    renderer_deregister_render_cb(m_ctx.renderer_handle);
+    texture_destroy(&m_ctx.pixel_texture);
+    window_destroy(&m_ctx.window);
+    SDL_DestroyCondition(m_ctx.emulation_step_condition);
+    SDL_DestroyMutex(m_ctx.emulation_mutex);
+
+    return false;
+}
+
+void gboy_cleanup(void) {
+    if (m_ctx.init == false) { return; }
+
+    if (debugger_is_open() == true) { debugger_close(); }
+
+    gboy_poweroff();
+
+    // TODO: Handle Cartridges correctly. Whether that means saving the RAM data to a file or
+    // TODO: however we decide to handle it.
+    gboy_eject_cart();
+
+    // TODO: Reset CPU state? Either here or during init
+
+    renderer_deregister_render_cb(m_ctx.renderer_handle);
+    texture_destroy(&m_ctx.pixel_texture);
+    window_destroy(&m_ctx.window);
+    SDL_DestroyCondition(m_ctx.emulation_step_condition);
+    SDL_DestroyMutex(m_ctx.emulation_mutex);
+
+    m_ctx.init = false;
+
+    log_debug("GBoy Cleanned Up");
+
+    return;
+}
+
+bool gboy_poweron(const size_t clock_speed) {
+    INIT_CHECK();
+
+    SDL_LockMutex(m_ctx.emulation_mutex);
+    if (m_ctx.emulation_thread_active == true) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
+        log_warn("GBoy is already running. Call gboy_poweroff() first.");
+        return false;
+    }
+
+    renderer_enable_cb(m_ctx.renderer_handle, true);
+    m_ctx.clock_speed = clock_speed;
+
+    // Start thread
+    m_ctx.emulation_thread = SDL_CreateThread(emulation_loop, GBOY_EMULATION_THREAD_NAME, NULL);
+    m_ctx.emulation_thread_active = (m_ctx.emulation_thread != NULL);
+    SDL_UnlockMutex(m_ctx.emulation_mutex);
+    if (m_ctx.emulation_thread == NULL) {
+        LOG_SDL_ERROR("Could not power on GBoy. SDL failed to create emulation thread.");
+        return false;
+    }
+
+    return true;
+}
+
+bool gboy_poweroff(void) {
+    INIT_CHECK();
+
+    SDL_LockMutex(m_ctx.emulation_mutex);
+    if (m_ctx.emulation_thread_active == false) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
+        log_warn("Gboy is already powered off.");
+        return true;
+    }
+
+    // If currently paused, force GBoy to take a step so it notices the exit flag
+    if (m_ctx.clock_speed == 0) { gboy_step(); }
+    m_ctx.emulation_thread_active = false;
+    renderer_enable_cb(m_ctx.renderer_handle, false);
+    SDL_UnlockMutex(m_ctx.emulation_mutex);
+
+    // By this point, emulation thread will be dispatched and see the false active flag
+    // Safe to wait for exit
+    SDL_WaitThread(m_ctx.emulation_thread, NULL);
+    m_ctx.emulation_thread = NULL;
+
+    return true;
+}
+
+bool gboy_load_rom(const char* path) {
+    INIT_CHECK();
+
+    if (m_ctx.cart != NULL) {
+        log_warn("Cartridge is already loaded. Eject old one first.");
+        return false;
+    }
+
+    if (path == NULL) {
+        log_error("No path given to load ROM from.");
+        return false;
+    }
+
+    m_ctx.cart = cartridge_create(path);
+    if (m_ctx.cart == NULL) {
+        log_error("Failed to create cartridge object");
+        return false;
+    }
+
+    int rc = mmu_load_cartridge(m_ctx.cart);
+    if (rc == -1) {
+        log_error("Bad cartridge. Couldn't load data.");
+        goto cleanup;
+    } else if (rc == -2) {
+        log_warn("Cartridge is already loaded. Eject old one first.");
+        goto cleanup;
+    }
+
+    return true;
+
+cleanup:
+    cartridge_free(&m_ctx.cart);
+    return false;
+}
+
+bool gboy_eject_cart(void) {
+    INIT_CHECK();
+
+    mmu_eject_cartridge();
+    cartridge_free(&m_ctx.cart);
+}
+
+bool gboy_step(void) {
+    INIT_CHECK();
+
+    // Thread may be mid-flight
+    SDL_LockMutex(m_ctx.emulation_mutex);
+
+    if (m_ctx.emulation_thread_active == false) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
+        log_warn("GBoy is powered off. Cannot step the emulation.");
+        return false;
+    }
+
+    if (m_ctx.clock_speed != 0) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
+        log_warn("GBoy clock speed is non-zero. Cannot step the emulation.");
+        return false;
+    }
+
+    // If we have the mutex and clock speed is 0, there is only two possible spots the emulation
+    // thread can be:
+    // - Blocked on the condition waiting for the signal to startup
+    // - Exited the critical section and potentially waiting for next cycle (thread wait time should
+    //   be instant since clock speed is 0).
+    //   If this is the case, thread may legitamately miss the step signal so the pending steps
+    //   variable accounts for this
+    m_ctx.pending_steps++;
+    SDL_SignalCondition(m_ctx.emulation_step_condition);
+    SDL_UnlockMutex(m_ctx.emulation_mutex);
+
+    return true;
+}
+
+bool gboy_set_clock_speed(const size_t clock_speed) {
+    INIT_CHECK();
+
+    SDL_LockMutex(m_ctx.emulation_mutex);
+    if (m_ctx.emulation_thread_active == false) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
+        log_warn("GBoy is powered off. Cannot step the emulation.");
+        return false;
+    }
+
+    // If currently paused, force a step so emulation thread sees the updated clock speed
+    if (m_ctx.clock_speed == 0) { gboy_step(); }
+    m_ctx.clock_speed = clock_speed;
+    SDL_UnlockMutex(m_ctx.emulation_mutex);
+
+    return true;
+}
+
+size_t gboy_get_clock_speed(void) {
+    //* This line returns `false` which is technically #define 0. This aligns with the
+    //* expected fail value of 0.
+    INIT_CHECK();
+
+    SDL_LockMutex(m_ctx.emulation_mutex);
+    if (m_ctx.emulation_thread_active == false) {
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
+        log_warn("GBoy is powered off. Returning clock speed of 0");
+        return 0;
+    }
+    size_t clock_speed = m_ctx.clock_speed;
+    SDL_UnlockMutex(m_ctx.emulation_mutex);
+
+    return clock_speed;
+}
+
+static int emulation_loop(void* arg) {
+    Uint32 prev_clock_speed = 0;
+    Uint64 target           = SDL_GetPerformanceCounter();
+    Uint64 tick_increment   = 0;
+    Uint64 tick_remainder   = 0;
+    Uint64 frac_accum       = 0;
+
+    log_info("Emulation Thread Starting");
+
+    while (true) {
+        //! ------ CRITICAL ZONE START ------
+        SDL_LockMutex(m_ctx.emulation_mutex);
+
+        // Should we be paused?
+        if (m_ctx.clock_speed == 0) {
+            // Only pause when all pending steps are consumed
+            // Wait until step signal is given (Unlocks mutex during wait and relocks upon
+            // wakeup)
+            while (m_ctx.pending_steps == 0) {
+                SDL_WaitCondition(m_ctx.emulation_step_condition, m_ctx.emulation_mutex);
+            }
+            m_ctx.pending_steps--;
+            // Force target to be now instead of some point in the past
+            target = SDL_GetPerformanceCounter();
+        }
+
+        // Always check this before doing anything. Allows thread to kick out independent of whether
+        // the thread is currently spinning or just woke up from being paused
+        if (m_ctx.emulation_thread_active == false) {
+            SDL_UnlockMutex(m_ctx.emulation_mutex);
+            break;
+        }
+
+        // Execute the step (1M to 4T cycles)
+        m_cycle();
+        for (int i = 0; i < 4; i++) { t_cycle(); }
+        debugger_update_slot_values();
+
+        // Check if clock speed has updated since last cached value
+        // Update increment if so
+        if (prev_clock_speed != m_ctx.clock_speed) {
+            prev_clock_speed = m_ctx.clock_speed;
+            // tick_increment is meaningless if the clock speed is 0
+            if (prev_clock_speed != 0) {
+                tick_increment = SDL_GetPerformanceFrequency() / (Uint64)prev_clock_speed;
+                tick_remainder = SDL_GetPerformanceFrequency() % (Uint64)prev_clock_speed;
+                frac_accum     = 0;
+            }
+        }
+
+        SDL_UnlockMutex(m_ctx.emulation_mutex);
+        //! ------ CRITICAL ZONE END ------
+
+        // Update target based on cached clock speed
+        // This is where we also correct for drift (integer division loses accuracy)
+        // Note: This can be skipped if the clock speed is currently 0
+        if (prev_clock_speed != 0) {
+            target     += tick_increment;
+            frac_accum += tick_remainder;
+            if (frac_accum >= prev_clock_speed) {
+                frac_accum -= prev_clock_speed;
+                target++;
+            }
+        }
+
+        // Busy Loop while waiting for the next cycle
+        while (SDL_GetPerformanceCounter() < target) { SDL_CPUPauseInstruction(); }
+    }
+
+    log_info("Emulation Thread Stopping");
+
+    return 0;
+}
+
+static void m_cycle(void) {
+    if (cpu_execute() != 0) {
+        log_warn("CPU reported an error. Pausing emulation");
+        // if cpu reports an error, immediately lock up the emulation thread by pausing it
+        gboy_set_clock_speed(0);
+    }
+}
+
+static void t_cycle(void) {
+    if (ppu_execute() != 0) {
+        log_warn("PPU reported an error. Pausing emulation");
+        // if ppu reports an error, immediately lock up the emulation thread by pausing it
+        gboy_set_clock_speed(0);
+    }
+}
+
+static void window_update(void) {
+    lcd_frame_t* next_frame = lcd_request_draw_buffer();
+
+    // Only draw a new frame if the next frame is not a stale frame
+    if (m_ctx.current_frame != next_frame || gboy_get_clock_speed() < 100000) {
+        window_clear(m_ctx.window);
+        texture_update(m_ctx.pixel_texture, *next_frame, GB_ARRAY_SIZEOF(*next_frame));
+        texture_draw(m_ctx.window, m_ctx.pixel_texture);
+        window_present(m_ctx.window);
+        m_ctx.current_frame = next_frame;
+    }
+}
+
+static void window_event_handler(const struct event* evt) {
+    switch (evt->type) {
+    case EVENT_APPLICATION:
+        log_error("Application events should not be thrown by a window");
+        return;
+    case EVENT_INPUT:
+        window_handle_input(&evt->input);
+        return;
+    case EVENT_WINDOW:
+        switch (evt->window.type) {
+        case EVENT_WINDOW_CLOSE_REQUESTED:
+            log_info("GBoy window requested to close");
+            // Only power off and ensure an APPLICATION quit event is posted
+            // Main will handle proper shutdown
+            gboy_poweroff();
+            SDL_Event quit_evt;
+            SDL_zero(quit_evt);
+            quit_evt.type = SDL_EVENT_QUIT;
+            SDL_PushEvent(&quit_evt);
+            return;
+        case EVENT_WINDOW_DESTROYED:
+            log_info("GBoy window destroyed");
+            return;
+        default:
+            log_debug("Unhandled Window Event");
+            return;
+        }
+    default:
+        log_debug("Unhandled Event");
+        return;
+    }
+
+    return;
+}
+
+static void window_handle_input(const struct event_input* evt) {
+    switch (evt->type) {
+    case EVENT_INPUT_BUTTON:
+        const struct event_input_button* button_input = &evt->button;
+
+        if (button_input->device == DEVICE_KEYBOARD) {
+            if (button_input->button == KEYCODE_GRAVE) {
+                // Open Debugger
+                if (button_input->down == false || button_input->repeat == true) { return; }
+                if (debugger_is_open() == true) { return; }
+                debugger_open();
+                return;
+            }
+
+            return;
+        } else {
+            log_debug("Unhandled Device Input");
+            return;
+        }
+        return;
+    case EVENT_INPUT_MOTION:
+        return;
+    default:
+        log_debug("Unhandled Input Event");
+        return;
+    }
+}
