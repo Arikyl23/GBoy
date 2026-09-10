@@ -77,16 +77,16 @@ int cpu_execute(void) {
     CPU_INSTR instr  = m_opcode_table[opcode];
     instr();
 
-    if (m_reg.PC == 0x0099) {
-        log_warn(
-            "\n"
-            "=== CPU Breakpoint Hit ===\n"
-            "       ADDR: 0x%.4X\n"
-            "==========================",
-            m_reg.PC
-        );
-        return -1;
-    }
+    // if (m_reg.PC == 0x0099) {
+    //     log_warn(
+    //         "\n"
+    //         "=== CPU Breakpoint Hit ===\n"
+    //         "       ADDR: 0x%.4X\n"
+    //         "==========================",
+    //         m_reg.PC
+    //     );
+    //     return -1;
+    // }
 
     return m_status;
 }

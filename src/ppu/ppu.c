@@ -18,7 +18,7 @@
 #include "ppu/ppu_mode.h"
 #include "utility/fifo.h"
 
-LOG_MODULE_SETUP("PPU", LOG_DEBUG);
+LOG_MODULE_SETUP("PPU", DEFAULT_LOG_LEVEL);
 
 // TODO: Refactor this into a proper design that takes "penalties" into account
 #define PPU_SCANLINE_END_DOT      456

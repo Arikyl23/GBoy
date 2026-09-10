@@ -1,5 +1,5 @@
 target_sources(GBoy_Internal
     INTERFACE
-		event.c
-		keycodes.c
+	${CMAKE_CURRENT_SOURCE_DIR}/event.c
+	${CMAKE_CURRENT_SOURCE_DIR}/keycodes.c
 )

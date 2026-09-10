@@ -32,7 +32,7 @@ cmrc_add_resource_library(Assets
     NAMESPACE GBoy
     ALIAS GBoy::Assets
 
-    assets/fonts/JetBrainsMono-Regular.ttf
+    ${CMAKE_SOURCE_DIR}/assets/fonts/JetBrainsMono-Regular.ttf
 )
 
 # ----- Construct GBoy Internal INTERFACE Library -----
@@ -41,7 +41,7 @@ add_library(GBoy_Internal INTERFACE)
 add_library(GBoy::Internal ALIAS GBoy_Internal)
 # All source/headers are in /src
 target_include_directories(GBoy_Internal INTERFACE "${CMAKE_SOURCE_DIR}/src")
-add_subdirectory(src)
+add_subdirectory(${CMAKE_SOURCE_DIR}/src)
 # Add the libraries the source depends on
 target_link_libraries(GBoy_Internal
     INTERFACE
@@ -92,9 +92,9 @@ target_include_directories(GBoy_Internal_Test
 )
 
 # Setup GBoy Executable (Simple Wrapper for lib_GBoy)
-add_executable(GBoy src/main.c)
+add_executable(GBoy ${CMAKE_SOURCE_DIR}/src/main.c)
 target_link_libraries(GBoy PRIVATE GBoy::Internal::Prod)
 
 # ----- Testing -----
 enable_testing()
-add_subdirectory(tests)
+add_subdirectory(${CMAKE_SOURCE_DIR}/tests)

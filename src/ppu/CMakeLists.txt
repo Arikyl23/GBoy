@@ -1,5 +1,5 @@
 target_sources(GBoy_Internal
     INTERFACE
-        ppu.c
-        fetcher.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ppu.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/fetcher.c
 )

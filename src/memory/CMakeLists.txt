@@ -1,6 +1,6 @@
 target_sources(GBoy_Internal
     INTERFACE
-        mmu.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/mmu.c
 )
 
-add_subdirectory(cartridge)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/cartridge)

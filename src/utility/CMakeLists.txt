@@ -1,4 +1,4 @@
 target_sources(GBoy_Internal
     INTERFACE
-        fifo.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/fifo.c
 )

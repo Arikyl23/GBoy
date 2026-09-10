@@ -1,6 +1,6 @@
 target_sources(GBoy_Internal
     INTERFACE
-        registers.c
-        alu.c
-        cpu.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/registers.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/alu.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/cpu.c
 )
