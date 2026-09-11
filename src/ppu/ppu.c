@@ -20,7 +20,6 @@
 
 LOG_MODULE_SETUP("PPU", DEFAULT_LOG_LEVEL);
 
-// TODO: Refactor this into a proper design that takes "penalties" into account
 #define PPU_SCANLINE_END_DOT      456
 #define PPU_VBLANK_START_SCANLINE 144
 #define PPU_FRAME_END_SCANLINE    153
