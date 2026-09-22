@@ -4,6 +4,7 @@
 [submodule "vendored/SDL_ttf-release-3.2.0"]
 	path = vendored/SDL_ttf-release-3.2.0
 	url = https://github.com/libsdl-org/SDL_ttf.git
+	ignore = untracked
 [submodule "vendored/gb-test-roms"]
 	path = vendored/gb-test-roms
 	url = https://github.com/retrio/gb-test-roms.git
