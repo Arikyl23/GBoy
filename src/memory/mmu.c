@@ -290,6 +290,8 @@ static void mmu_wram_write(const enum bus source, const word addr, const byte va
 }
 
 static byte mmu_echo_ram_read(const enum bus source, const word addr) {
+    if (source == BUS_EXTERN) { return 0xFF; }
+
     // ECHO RAM address needs to be adjusted for WRAM
     byte value = mmu_wram_read(source, addr - (ADDR_ECHO_RAM_START - ADDR_WRAM_START));
     log_warn(
@@ -354,6 +356,8 @@ static void mmu_oam_write(const enum bus source, const word addr, const byte val
 }
 
 static byte mmu_prohibited_read(const enum bus source, const word addr) {
+    if (source == BUS_EXTERN) { return 0xFF; }
+
     if (source == BUS_CPU && mmu_oam_blocked(source) == true) {
         log_warn(
             "CPU attempted to read at prohibited address 0x%.4X. Returned 0xFF instead.",
@@ -458,6 +462,8 @@ static void mmu_ie_write(const enum bus source, const byte value) {
 }
 
 static byte mmu_invalid_read(const enum bus source, const word addr) {
+    if (source == BUS_EXTERN) { return 0xFF; }
+
     log_warn(
         "%s attempted to read at invalid address 0x%.4X. Returned 0xFF instead.",
         bus_to_string(source),

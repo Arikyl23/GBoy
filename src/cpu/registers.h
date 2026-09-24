@@ -54,6 +54,12 @@ struct registers { /** @brief Structure that housing the registers. */
             byte A;
         };
     };
+
+    /**
+     * @brief Interrupt Master Enable Flag. This controls whether interrupts can happen regardless
+     * of the IE and IF hardware registers.
+     */
+    bool IME;
 };
 
 /**

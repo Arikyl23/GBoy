@@ -10,6 +10,7 @@
 #include "DEFINES.h"
 #include "cpu/alu.h"
 #include "cpu/registers.h"
+#include "memory/hw_registers.h"
 #include "memory/mmu.h"
 
 LOG_MODULE_SETUP("CPU", CONFIG_CPU_MODULE_LOG_LEVEL)
@@ -40,11 +41,11 @@ static const CPU_INSTR m_opcode_table[0x100] = {
 /* 0x8_ */ cpu_opcode_ADD_rA_rB, cpu_opcode_ADD_rA_rC,  cpu_opcode_ADD_rA_rD,  cpu_opcode_ADD_rA_rE, cpu_opcode_ADD_rA_rH,   cpu_opcode_ADD_rA_rL, cpu_opcode_ADD_rA_iHL, cpu_opcode_ADD_rA_rA, cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined,
 /* 0x9_ */ cpu_opcode_SUB_rA_rB, cpu_opcode_SUB_rA_rC,  cpu_opcode_SUB_rA_rD,  cpu_opcode_SUB_rA_rE, cpu_opcode_SUB_rA_rH,   cpu_opcode_SUB_rA_rL, cpu_opcode_SUB_rA_iHL, cpu_opcode_SUB_rA_rA, cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined,
 /* 0xA_ */ cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined,   cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_XOR_rA_rB, cpu_opcode_XOR_rA_rC, cpu_opcode_XOR_rA_rD,  cpu_opcode_XOR_rA_rE, cpu_opcode_XOR_rA_rH,  cpu_opcode_XOR_rA_rL, cpu_opcode_XOR_rA_iHL, cpu_opcode_XOR_rA_rA,
-/* 0xB_ */ cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined,   cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_CP_rA_rB,  cpu_opcode_CP_rA_rC,  cpu_opcode_CP_rA_rD,   cpu_opcode_CP_rA_rE,  cpu_opcode_CP_rA_rH,   cpu_opcode_CP_rA_rL,  cpu_opcode_CP_rA_iHL,  cpu_opcode_CP_rA_rA,
+/* 0xB_ */ cpu_opcode_OR_rA_rB,  cpu_opcode_OR_rA_rC,   cpu_opcode_OR_rA_rD,   cpu_opcode_OR_rA_rE,  cpu_opcode_OR_rA_rH,    cpu_opcode_OR_rA_rL,  cpu_opcode_OR_rA_iHL,  cpu_opcode_OR_rA_rA,  cpu_opcode_CP_rA_rB,  cpu_opcode_CP_rA_rC,  cpu_opcode_CP_rA_rD,   cpu_opcode_CP_rA_rE,  cpu_opcode_CP_rA_rH,   cpu_opcode_CP_rA_rL,  cpu_opcode_CP_rA_iHL,  cpu_opcode_CP_rA_rA,
 /* 0xC_ */ cpu_opcode_RET_NZ,    cpu_opcode_POP_rBC,    cpu_opcode_JP_NZ_u16,  cpu_opcode_JP_u16,    cpu_opcode_CALL_NZ_u16, cpu_opcode_PUSH_rBC,  cpu_opcode_ADD_rA_u8,  cpu_opcode_undefined, cpu_opcode_RET_Z,     cpu_opcode_RET,       cpu_opcode_JP_Z_u16,   cpu_opcode_CB,        cpu_opcode_CALL_Z_u16, cpu_opcode_CALL_u16,  cpu_opcode_undefined,  cpu_opcode_undefined,
 /* 0xD_ */ cpu_opcode_RET_NC,    cpu_opcode_POP_rDE,    cpu_opcode_JP_NC_u16,  cpu_opcode_undefined, cpu_opcode_CALL_NC_u16, cpu_opcode_PUSH_rDE,  cpu_opcode_SUB_rA_u8,  cpu_opcode_undefined, cpu_opcode_RET_C,     cpu_opcode_undefined, cpu_opcode_JP_C_u16,   cpu_opcode_undefined, cpu_opcode_CALL_C_u16, cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined,
 /* 0xE_ */ cpu_opcode_LDH_u8_rA, cpu_opcode_POP_rHL,    cpu_opcode_LDH_rC_rA,  cpu_opcode_undefined, cpu_opcode_undefined,   cpu_opcode_PUSH_rHL,  cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_LD_i16_rA,  cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_XOR_rA_u8,  cpu_opcode_undefined,
-/* 0xF_ */ cpu_opcode_LDH_rA_u8, cpu_opcode_POP_rAF,    cpu_opcode_LDH_rA_rC,  cpu_opcode_undefined, cpu_opcode_undefined,   cpu_opcode_PUSH_rAF,  cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_LD_rA_i16,  cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_CP_rA_u8,   cpu_opcode_undefined
+/* 0xF_ */ cpu_opcode_LDH_rA_u8, cpu_opcode_POP_rAF,    cpu_opcode_LDH_rA_rC,  cpu_opcode_DI,        cpu_opcode_undefined,   cpu_opcode_PUSH_rAF,  cpu_opcode_OR_rA_u8,   cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_LD_rA_i16,  cpu_opcode_EI,        cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_CP_rA_u8,   cpu_opcode_undefined
 };
 
 static const CPU_INSTR m_cb_opcode_table[0x100] = {
@@ -223,6 +224,12 @@ static inline void cpu_generic_XOR_r8_u8(byte* dst, const byte src) {
     registers_set_flags(&m_reg, result.flags.z, false, false, false);
 }
 
+static inline void cpu_generic_OR_r8_u8(byte* dst, const byte src) {
+    struct alu_result result = alu_or_8b(*dst, src);
+    *dst                     = result.result.byte;
+    registers_set_flags(&m_reg, result.flags.z, false, false, false);
+}
+
 static inline void cpu_generic_CP_r8_u8(byte* dst, const byte src) {
     struct alu_result result = alu_cp_8b(*dst, src);
     *dst                     = result.result.byte;
@@ -290,8 +297,8 @@ static void cpu_opcode_NOP(void) {
 static void cpu_opcode_STOP(void);
 static void cpu_opcode_HALT(void);
 static void cpu_opcode_CB(void) { m_cb_opcode_table[cpu_read_u8()](); }
-static void cpu_opcode_DI(void);
-static void cpu_opcode_EI(void);
+static void cpu_opcode_DI(void) { m_reg.IME = false; }
+static void cpu_opcode_EI(void) { m_reg.IME = true; }
 // Misc
 
 // Branch
@@ -608,14 +615,16 @@ static void cpu_opcode_XOR_rA_iHL(void) {
 static void cpu_opcode_XOR_rA_rA(void) { cpu_generic_XOR_r8_u8(&m_reg.A, m_reg.A); }
 
 // OR Register (or indirect HL) with A
-static void cpu_opcode_OR_rA_rB(void);
-static void cpu_opcode_OR_rA_rC(void);
-static void cpu_opcode_OR_rA_rD(void);
-static void cpu_opcode_OR_rA_rE(void);
-static void cpu_opcode_OR_rA_rH(void);
-static void cpu_opcode_OR_rA_rL(void);
-static void cpu_opcode_OR_rA_iHL(void);
-static void cpu_opcode_OR_rA_rA(void);
+static void cpu_opcode_OR_rA_rB(void) { cpu_generic_OR_r8_u8(&m_reg.A, m_reg.B); }
+static void cpu_opcode_OR_rA_rC(void) { cpu_generic_OR_r8_u8(&m_reg.A, m_reg.C); }
+static void cpu_opcode_OR_rA_rD(void) { cpu_generic_OR_r8_u8(&m_reg.A, m_reg.D); }
+static void cpu_opcode_OR_rA_rE(void) { cpu_generic_OR_r8_u8(&m_reg.A, m_reg.E); }
+static void cpu_opcode_OR_rA_rH(void) { cpu_generic_OR_r8_u8(&m_reg.A, m_reg.H); }
+static void cpu_opcode_OR_rA_rL(void) { cpu_generic_OR_r8_u8(&m_reg.A, m_reg.L); }
+static void cpu_opcode_OR_rA_iHL(void) {
+    cpu_generic_OR_r8_u8(&m_reg.A, mmu_read(BUS_CPU, m_reg.HL));
+}
+static void cpu_opcode_OR_rA_rA(void) { cpu_generic_OR_r8_u8(&m_reg.A, m_reg.A); }
 
 // Compare Register (or indirect HL) with A
 static void cpu_opcode_CP_rA_rB(void) { cpu_generic_CP_r8_u8(&m_reg.A, m_reg.B); }
@@ -636,7 +645,7 @@ static void cpu_opcode_SUB_rA_u8(void) { cpu_generic_SUB_r8_u8(&m_reg.A, cpu_rea
 static void cpu_opcode_SBC_rA_u8(void);
 static void cpu_opcode_AND_rA_u8(void);
 static void cpu_opcode_XOR_rA_u8(void) { cpu_generic_XOR_r8_u8(&m_reg.A, cpu_read_u8()); }
-static void cpu_opcode_OR_rA_u8(void);
+static void cpu_opcode_OR_rA_u8(void) { cpu_generic_OR_r8_u8(&m_reg.A, cpu_read_u8()); }
 static void cpu_opcode_CP_rA_u8(void) { cpu_generic_CP_r8_u8(&m_reg.A, cpu_read_u8()); }
 
 // Misc
