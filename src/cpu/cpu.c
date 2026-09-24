@@ -41,8 +41,8 @@ static const CPU_INSTR m_opcode_table[0x100] = {
 /* 0x9_ */ cpu_opcode_SUB_rA_rB, cpu_opcode_SUB_rA_rC,  cpu_opcode_SUB_rA_rD,  cpu_opcode_SUB_rA_rE, cpu_opcode_SUB_rA_rH,   cpu_opcode_SUB_rA_rL, cpu_opcode_SUB_rA_iHL, cpu_opcode_SUB_rA_rA, cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined,
 /* 0xA_ */ cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined,   cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_XOR_rA_rB, cpu_opcode_XOR_rA_rC, cpu_opcode_XOR_rA_rD,  cpu_opcode_XOR_rA_rE, cpu_opcode_XOR_rA_rH,  cpu_opcode_XOR_rA_rL, cpu_opcode_XOR_rA_iHL, cpu_opcode_XOR_rA_rA,
 /* 0xB_ */ cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined,   cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_CP_rA_rB,  cpu_opcode_CP_rA_rC,  cpu_opcode_CP_rA_rD,   cpu_opcode_CP_rA_rE,  cpu_opcode_CP_rA_rH,   cpu_opcode_CP_rA_rL,  cpu_opcode_CP_rA_iHL,  cpu_opcode_CP_rA_rA,
-/* 0xC_ */ cpu_opcode_RET_NZ,    cpu_opcode_POP_rBC,    cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_CALL_NZ_u16, cpu_opcode_PUSH_rBC,  cpu_opcode_ADD_rA_u8,  cpu_opcode_undefined, cpu_opcode_RET_Z,     cpu_opcode_RET,       cpu_opcode_undefined,  cpu_opcode_CB,        cpu_opcode_CALL_Z_u16, cpu_opcode_CALL_u16,  cpu_opcode_undefined,  cpu_opcode_undefined,
-/* 0xD_ */ cpu_opcode_RET_NC,    cpu_opcode_POP_rDE,    cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_CALL_NC_u16, cpu_opcode_PUSH_rDE,  cpu_opcode_SUB_rA_u8,  cpu_opcode_undefined, cpu_opcode_RET_C,     cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_CALL_C_u16, cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined,
+/* 0xC_ */ cpu_opcode_RET_NZ,    cpu_opcode_POP_rBC,    cpu_opcode_JP_NZ_u16,  cpu_opcode_JP_u16,    cpu_opcode_CALL_NZ_u16, cpu_opcode_PUSH_rBC,  cpu_opcode_ADD_rA_u8,  cpu_opcode_undefined, cpu_opcode_RET_Z,     cpu_opcode_RET,       cpu_opcode_JP_Z_u16,   cpu_opcode_CB,        cpu_opcode_CALL_Z_u16, cpu_opcode_CALL_u16,  cpu_opcode_undefined,  cpu_opcode_undefined,
+/* 0xD_ */ cpu_opcode_RET_NC,    cpu_opcode_POP_rDE,    cpu_opcode_JP_NC_u16,  cpu_opcode_undefined, cpu_opcode_CALL_NC_u16, cpu_opcode_PUSH_rDE,  cpu_opcode_SUB_rA_u8,  cpu_opcode_undefined, cpu_opcode_RET_C,     cpu_opcode_undefined, cpu_opcode_JP_C_u16,   cpu_opcode_undefined, cpu_opcode_CALL_C_u16, cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined,
 /* 0xE_ */ cpu_opcode_LDH_u8_rA, cpu_opcode_POP_rHL,    cpu_opcode_LDH_rC_rA,  cpu_opcode_undefined, cpu_opcode_undefined,   cpu_opcode_PUSH_rHL,  cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_LD_i16_rA,  cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_XOR_rA_u8,  cpu_opcode_undefined,
 /* 0xF_ */ cpu_opcode_LDH_rA_u8, cpu_opcode_POP_rAF,    cpu_opcode_LDH_rA_rC,  cpu_opcode_undefined, cpu_opcode_undefined,   cpu_opcode_PUSH_rAF,  cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_undefined, cpu_opcode_LD_rA_i16,  cpu_opcode_undefined, cpu_opcode_undefined,  cpu_opcode_undefined, cpu_opcode_CP_rA_u8,   cpu_opcode_undefined
 };
@@ -156,6 +156,8 @@ static inline void cpu_generic_JR_cond_i8(const bool condition) {
 static inline void cpu_generic_RET_cond(const bool condition) {
     if (condition == true) { m_reg.PC = cpu_pop_u16(); }
 }
+
+static inline void cpu_generic_JP_i16(const word address) { m_reg.PC = address; }
 
 static inline void cpu_generic_CALL_cond_i16(const bool condition) {
     word call_address = cpu_read_u16();
@@ -312,11 +314,23 @@ static void cpu_opcode_RET_NC(void) { cpu_generic_RET_cond(registers_get_flag_c(
 static void cpu_opcode_RET_Z(void) { cpu_generic_RET_cond(registers_get_flag_z(&m_reg) == true); }
 static void cpu_opcode_RET_C(void) { cpu_generic_RET_cond(registers_get_flag_c(&m_reg) == true); }
 static void cpu_opcode_RETI(void);
-static void cpu_opcode_JP_u16(void);
-static void cpu_opcode_JP_NZ_u16(void);
-static void cpu_opcode_JP_NC_u16(void);
-static void cpu_opcode_JP_Z_u16(void);
-static void cpu_opcode_JP_C_u16(void);
+static void cpu_opcode_JP_u16(void) { cpu_generic_JP_i16(cpu_read_u16()); }
+static void cpu_opcode_JP_NZ_u16(void) {
+    word jump_address = cpu_read_u16();
+    if (registers_get_flag_z(&m_reg) == false) { cpu_generic_JP_i16(jump_address); }
+}
+static void cpu_opcode_JP_NC_u16(void) {
+    word jump_address = cpu_read_u16();
+    if (registers_get_flag_c(&m_reg) == false) { cpu_generic_JP_i16(jump_address); }
+}
+static void cpu_opcode_JP_Z_u16(void) {
+    word jump_address = cpu_read_u16();
+    if (registers_get_flag_c(&m_reg) == true) { cpu_generic_JP_i16(jump_address); }
+}
+static void cpu_opcode_JP_C_u16(void) {
+    word jump_address = cpu_read_u16();
+    if (registers_get_flag_c(&m_reg) == true) { cpu_generic_JP_i16(jump_address); }
+}
 static void cpu_opcode_JP_rHL(void);
 static void cpu_opcode_CALL_u16(void) { cpu_generic_CALL_cond_i16(true); }
 static void cpu_opcode_CALL_NZ_u16(void) {
